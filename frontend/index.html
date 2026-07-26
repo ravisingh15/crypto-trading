@@ -79,8 +79,22 @@
                 </div>
             </section>
 
+            <!-- Tab Navigation -->
+            <section class="tab-nav glass-card" id="tab-nav">
+                <button class="tab-btn active" data-tab="screener">
+                    <span class="tab-icon">📊</span> Market Screener
+                </button>
+                <button class="tab-btn" data-tab="signals">
+                    <span class="tab-icon">🎯</span> Trade Signals
+                    <span class="signal-badge" id="signal-count-badge">0</span>
+                </button>
+                <button class="tab-btn" data-tab="wallet">
+                    <span class="tab-icon">💰</span> Wallet
+                </button>
+            </section>
+
             <!-- Screener Controls Toolbar -->
-            <section class="screener-toolbar glass-card">
+            <section class="screener-toolbar glass-card" id="screener-panel">
                 <div class="toolbar-left">
                     <div class="search-box">
                         <span class="search-icon">🔍</span>
@@ -126,7 +140,7 @@
             </section>
 
             <!-- Screener Data Table -->
-            <section class="table-container glass-card">
+            <section class="table-container glass-card" id="screener-table-section">
                 <table class="screener-table" id="screener-table">
                     <thead>
                         <tr>
@@ -152,8 +166,186 @@
                     </tbody>
                 </table>
             </section>
+
+            <!-- Trade Signals Panel (Hidden by Default) -->
+            <section class="signals-panel" id="signals-panel" style="display:none;">
+                <!-- Signal Controls -->
+                <div class="signals-toolbar glass-card">
+                    <div class="toolbar-left">
+                        <div class="filter-group">
+                            <label>Risk:Reward:</label>
+                            <select id="rr-select" class="select-input">
+                                <option value="1:1.5">1:1.5 R:R (Conservative)</option>
+                                <option value="1:2.0" selected>1:2.0 R:R (Standard)</option>
+                                <option value="1:3.0">1:3.0 R:R (Aggressive)</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Timeframe:</label>
+                            <select id="signal-timeframe-select" class="select-input">
+                                <option value="15m">15m</option>
+                                <option value="1h" selected>1h</option>
+                                <option value="4h">4h</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Min Confidence:</label>
+                            <select id="confidence-select" class="select-input">
+                                <option value="0">All Signals</option>
+                                <option value="30">30+ (Low)</option>
+                                <option value="50" selected>50+ (Medium)</option>
+                                <option value="70">70+ (High)</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Direction:</label>
+                            <select id="direction-filter" class="select-input">
+                                <option value="ALL">All</option>
+                                <option value="LONG">Long Only</option>
+                                <option value="SHORT">Short Only</option>
+                            </select>
+                        </div>
+
+                        <button class="btn btn-primary" id="btn-scan-signals">
+                            <span class="scan-icon">🎯</span> Scan Now
+                        </button>
+                    </div>
+                    <div class="toolbar-right">
+                        <span class="records-count" id="signal-records-count">0 Active Signals</span>
+                    </div>
+                </div>
+
+                <!-- Signal Cards Grid -->
+                <div class="signal-cards-grid" id="signal-cards-grid">
+                    <div class="signal-loading glass-card">
+                        <div class="spinner"></div>
+                        <p>Click <strong>"Scan Now"</strong> to detect live trade entry points...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Wallet Panel (Hidden by Default) -->
+            <section class="wallet-panel" id="wallet-panel" style="display:none;">
+                <!-- Portfolio Header -->
+                <div class="portfolio-header glass-card">
+                    <div class="portfolio-total">
+                        <span class="portfolio-label">Total Portfolio Value</span>
+                        <span class="portfolio-value" id="portfolio-total-value">$0.00</span>
+                        <span class="portfolio-sub" id="portfolio-asset-count">0 assets</span>
+                    </div>
+                    <div class="portfolio-status">
+                        <span class="portfolio-status-label" id="portfolio-trade-status">⏳ Loading...</span>
+                        <button class="btn btn-outline" id="btn-refresh-wallet">↻ Refresh</button>
+                    </div>
+                </div>
+
+                <!-- Asset List -->
+                <div class="wallet-assets-grid" id="wallet-assets-grid">
+                    <div class="signal-loading glass-card">
+                        <div class="spinner"></div>
+                        <p>Loading wallet balances...</p>
+                    </div>
+                </div>
+            </section>
+
         </main>
     </div>
+
+    <!-- Trade Confirmation Modal -->
+    <div class="modal-overlay" id="trade-modal">
+        <div class="modal-card glass-card trade-modal-card">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <h2 id="trade-modal-title">Confirm Trade</h2>
+                </div>
+                <button class="btn-close" id="btn-close-trade-modal">✕</button>
+            </div>
+
+            <div class="trade-modal-body">
+                <!-- Trade Summary -->
+                <div class="trade-summary-section">
+                    <div class="trade-pair-header">
+                        <span class="trade-pair-symbol" id="trade-pair-symbol">BTCUSDT</span>
+                        <span class="direction-badge" id="trade-direction-badge">▲ LONG</span>
+                    </div>
+
+                    <div class="trade-levels-grid">
+                        <div class="trade-level">
+                            <span class="trade-level-label">📍 Entry Price</span>
+                            <span class="trade-level-value" id="trade-entry-price">$0.00</span>
+                        </div>
+                        <div class="trade-level sl">
+                            <span class="trade-level-label">🛑 Stop Loss</span>
+                            <span class="trade-level-value" id="trade-sl-price">$0.00</span>
+                            <span class="trade-level-pct" id="trade-sl-pct">-0%</span>
+                        </div>
+                        <div class="trade-level tp">
+                            <span class="trade-level-label">🎯 Take Profit</span>
+                            <span class="trade-level-value" id="trade-tp-price">$0.00</span>
+                            <span class="trade-level-pct" id="trade-tp-pct">+0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Position Sizing -->
+                <div class="trade-sizing-section">
+                    <h4>Position Sizing</h4>
+                    <div class="trade-sizing-grid">
+                        <div class="trade-sizing-field">
+                            <label>Account Balance ($)</label>
+                            <input type="number" id="trade-account-size" value="1000" min="10">
+                        </div>
+                        <div class="trade-sizing-field">
+                            <label>Risk Per Trade (%)</label>
+                            <input type="number" id="trade-risk-pct" value="2" min="0.1" max="10" step="0.5">
+                        </div>
+                    </div>
+                    <div class="trade-sizing-results">
+                        <div class="trade-sizing-row">
+                            <span>💵 Dollar Risk:</span>
+                            <strong id="trade-dollar-risk">$20.00</strong>
+                        </div>
+                        <div class="trade-sizing-row">
+                            <span>📦 Position Size:</span>
+                            <strong id="trade-position-size">0.00</strong>
+                        </div>
+                        <div class="trade-sizing-row">
+                            <span>💰 Position Value:</span>
+                            <strong id="trade-position-value">$0.00</strong>
+                        </div>
+                        <div class="trade-sizing-row">
+                            <span>📊 R:R Ratio:</span>
+                            <strong id="trade-rr-display">1:2.0</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Warning -->
+                <div class="trade-warning">
+                    ⚠️ This will place a <strong>LIVE MARKET ORDER</strong> on Binance Spot.
+                    An OCO order (SL + TP) will be placed automatically after entry fills.
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="trade-actions">
+                    <button class="btn btn-outline" id="btn-cancel-trade">Cancel</button>
+                    <button class="btn btn-danger-hold" id="btn-confirm-trade">
+                        <span class="hold-text">Hold 3s to Execute</span>
+                        <span class="hold-progress"></span>
+                    </button>
+                </div>
+
+                <!-- Order Result -->
+                <div class="trade-result" id="trade-result" style="display:none;">
+                    <div class="trade-result-content" id="trade-result-content"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Technical Chart Modal -->
     <div class="modal-overlay" id="chart-modal">

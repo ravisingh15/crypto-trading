@@ -15,7 +15,7 @@ class BinanceClient:
     def __init__(self, api_key: str = API_KEY, secret_key: str = SECRET_KEY):
         self.api_key = api_key
         self.secret_key = secret_key
-        self.base_urls = [BINANCE_BASE_URL, BINANCE_DATA_URL]
+        self.base_urls = [BINANCE_DATA_URL, BINANCE_BASE_URL]
         self.session = requests.Session()
         if self.api_key:
             self.session.headers.update({
@@ -78,16 +78,22 @@ class BinanceClient:
         ]
         return usdt_tickers
 
-    def get_klines(self, symbol: str, interval: str = "1h", limit: int = 100) -> List[List[Any]]:
+    def get_klines(self, symbol: str, interval: str = "1h", limit: int = 100,
+                    startTime: Optional[int] = None, endTime: Optional[int] = None) -> List[List[Any]]:
         """
         Fetch OHLCV kline/candlestick data for a symbol.
         Intervals: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w
+        startTime/endTime: optional Unix timestamps in milliseconds for pagination
         """
         params = {
             "symbol": symbol.upper(),
             "interval": interval,
             "limit": limit
         }
+        if startTime is not None:
+            params["startTime"] = startTime
+        if endTime is not None:
+            params["endTime"] = endTime
         return self._request("GET", "/api/v3/klines", params=params)
 
     def get_order_book(self, symbol: str, limit: int = 20) -> Dict[str, Any]:
@@ -99,5 +105,120 @@ class BinanceClient:
         """Fetch private account details and balance balances (Requires valid API key & secret)."""
         return self._request("GET", "/api/v3/account", signed=True)
 
+    def get_symbol_exchange_info(self, symbol: str) -> Dict[str, Any]:
+        """Fetch trading rules (lot size, tick size, min notional) for a symbol."""
+        data = self._request("GET", "/api/v3/exchangeInfo", params={"symbol": symbol.upper()})
+        if data and "symbols" in data and len(data["symbols"]) > 0:
+            return data["symbols"][0]
+        raise ValueError(f"No exchange info found for {symbol}")
+
+    def get_symbol_price(self, symbol: str) -> float:
+        """Fetch current market price for a symbol."""
+        data = self._request("GET", "/api/v3/ticker/price", params={"symbol": symbol.upper()})
+        return float(data.get("price", 0))
+
+    def place_market_order(self, symbol: str, side: str, quantity: float) -> Dict[str, Any]:
+        """
+        Place a MARKET order.
+        side: 'BUY' or 'SELL'
+        quantity: amount of base asset
+        """
+        params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": "MARKET",
+            "quantity": quantity,
+        }
+        return self._request("POST", "/api/v3/order", params=params, signed=True)
+
+    def place_limit_order(self, symbol: str, side: str, quantity: float, price: float,
+                          time_in_force: str = "GTC") -> Dict[str, Any]:
+        """
+        Place a LIMIT order.
+        side: 'BUY' or 'SELL'
+        time_in_force: GTC (Good Til Cancel), IOC, FOK
+        """
+        params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": "LIMIT",
+            "timeInForce": time_in_force,
+            "quantity": quantity,
+            "price": price,
+        }
+        return self._request("POST", "/api/v3/order", params=params, signed=True)
+
+    def place_stop_loss_order(self, symbol: str, side: str, quantity: float,
+                              stop_price: float) -> Dict[str, Any]:
+        """
+        Place a STOP_LOSS_LIMIT order (used for SL after entry).
+        For a LONG trade SL: side='SELL', stopPrice = SL level.
+        """
+        # Use stop price as limit price with small buffer for fills
+        buffer = 0.001 if side.upper() == "SELL" else -0.001
+        limit_price = stop_price * (1 + buffer)
+        params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": "STOP_LOSS_LIMIT",
+            "timeInForce": "GTC",
+            "quantity": quantity,
+            "price": limit_price,
+            "stopPrice": stop_price,
+        }
+        return self._request("POST", "/api/v3/order", params=params, signed=True)
+
+    def place_take_profit_order(self, symbol: str, side: str, quantity: float,
+                                stop_price: float) -> Dict[str, Any]:
+        """
+        Place a TAKE_PROFIT_LIMIT order (used for TP after entry).
+        For a LONG trade TP: side='SELL', stopPrice = TP level.
+        """
+        buffer = -0.001 if side.upper() == "SELL" else 0.001
+        limit_price = stop_price * (1 + buffer)
+        params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": "TAKE_PROFIT_LIMIT",
+            "timeInForce": "GTC",
+            "quantity": quantity,
+            "price": limit_price,
+            "stopPrice": stop_price,
+        }
+        return self._request("POST", "/api/v3/order", params=params, signed=True)
+
+    def place_oco_order(self, symbol: str, side: str, quantity: float,
+                        price: float, stop_price: float, stop_limit_price: float) -> Dict[str, Any]:
+        """
+        Place an OCO (One-Cancels-the-Other) order — combined TP + SL.
+        For LONG exit: side='SELL', price=TP level, stopPrice=SL trigger, stopLimitPrice=SL limit.
+        """
+        params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "quantity": quantity,
+            "price": price,                     # Take-profit limit price
+            "stopPrice": stop_price,            # Stop-loss trigger price
+            "stopLimitPrice": stop_limit_price, # Stop-loss limit price
+            "stopLimitTimeInForce": "GTC",
+        }
+        return self._request("POST", "/api/v3/order/oco", params=params, signed=True)
+
+    def get_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Fetch open orders. If symbol is None, returns all open orders."""
+        params = {}
+        if symbol:
+            params["symbol"] = symbol.upper()
+        return self._request("GET", "/api/v3/openOrders", params=params, signed=True)
+
+    def cancel_order(self, symbol: str, order_id: int) -> Dict[str, Any]:
+        """Cancel a specific open order by orderId."""
+        params = {
+            "symbol": symbol.upper(),
+            "orderId": order_id,
+        }
+        return self._request("DELETE", "/api/v3/order", params=params, signed=True)
+
 # Global client instance
 binance_client = BinanceClient()
+

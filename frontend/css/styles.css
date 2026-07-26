@@ -414,3 +414,717 @@ body {
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================
+   Tab Navigation
+   ============================ */
+.tab-nav {
+    display: flex;
+    gap: 4px;
+    padding: 6px;
+    background: var(--bg-card);
+}
+
+.tab-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    position: relative;
+}
+
+.tab-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.tab-btn.active {
+    color: var(--text-primary);
+    background: rgba(0, 210, 255, 0.08);
+    border: 1px solid rgba(0, 210, 255, 0.2);
+}
+
+.tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 20%;
+    right: 20%;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent-cyan), var(--green-bull));
+    border-radius: 2px;
+}
+
+.signal-badge {
+    background: linear-gradient(135deg, var(--accent-cyan), var(--green-bull));
+    color: #000;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    min-width: 22px;
+    text-align: center;
+}
+
+/* ============================
+   Trade Signals Panel
+   ============================ */
+.signals-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.signals-toolbar {
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.signal-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 16px;
+}
+
+.signal-loading {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 48px 24px;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+/* Signal Card */
+.signal-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: all 0.25s ease;
+    position: relative;
+}
+
+.signal-card:hover {
+    border-color: rgba(0, 210, 255, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.signal-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.signal-symbol-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.signal-symbol {
+    font-family: var(--font-heading);
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.direction-badge {
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.direction-badge.long {
+    background: rgba(0, 245, 160, 0.12);
+    color: var(--green-bull);
+    border: 1px solid rgba(0, 245, 160, 0.25);
+}
+
+.direction-badge.short {
+    background: rgba(255, 73, 92, 0.12);
+    color: var(--red-bear);
+    border: 1px solid rgba(255, 73, 92, 0.25);
+}
+
+.signal-freshness {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.freshness-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+}
+
+.freshness-dot.fresh {
+    background: var(--green-bull);
+    box-shadow: 0 0 8px var(--green-bull);
+}
+
+.freshness-dot.recent {
+    background: var(--amber-warning);
+    box-shadow: 0 0 8px var(--amber-warning);
+}
+
+.freshness-dot.aging {
+    background: var(--text-muted);
+}
+
+/* Price Levels */
+.signal-card-body {
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.price-levels {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+}
+
+.price-level {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-align: center;
+    padding: 10px 8px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-color);
+}
+
+.price-level-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-weight: 600;
+}
+
+.price-level-value {
+    font-family: 'Inter', monospace;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.price-level-pct {
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.price-level.sl .price-level-value,
+.price-level.sl .price-level-pct { color: var(--red-bear); }
+
+.price-level.entry .price-level-value { color: var(--text-primary); }
+.price-level.entry .price-level-pct { color: var(--accent-cyan); }
+
+.price-level.tp .price-level-value,
+.price-level.tp .price-level-pct { color: var(--green-bull); }
+
+/* Confidence Meter */
+.confidence-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.confidence-bar-track {
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.confidence-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
+.confidence-bar-fill.low { background: var(--red-bear); }
+.confidence-bar-fill.medium { background: linear-gradient(90deg, var(--amber-warning), #ffd43b); }
+.confidence-bar-fill.high { background: linear-gradient(90deg, var(--green-bull), var(--accent-cyan)); }
+
+.confidence-label {
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 32px;
+    text-align: right;
+}
+
+/* Signal Card Footer / Meta */
+.signal-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px 14px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.signal-strategy-name {
+    background: rgba(139, 92, 246, 0.1);
+    color: var(--purple-magic);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 11px;
+    border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.signal-meta-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.signal-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* ============================
+   Responsive Adjustments
+   ============================ */
+@media (max-width: 900px) {
+    .signal-cards-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .tab-nav {
+        flex-direction: row;
+    }
+
+    .tab-btn {
+        font-size: 12px;
+        padding: 10px 12px;
+    }
+
+    .price-levels {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ============================
+   Wallet Panel
+   ============================ */
+.wallet-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.portfolio-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 28px;
+}
+
+.portfolio-total {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.portfolio-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.portfolio-value {
+    font-family: var(--font-heading);
+    font-size: 36px;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--green-bull));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.portfolio-sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.portfolio-status {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.portfolio-status-label {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 600;
+}
+
+.portfolio-status-label.can-trade {
+    background: rgba(0, 245, 160, 0.12);
+    color: var(--green-bull);
+    border: 1px solid rgba(0, 245, 160, 0.25);
+}
+
+.portfolio-status-label.no-trade {
+    background: rgba(255, 73, 92, 0.12);
+    color: var(--red-bear);
+    border: 1px solid rgba(255, 73, 92, 0.25);
+}
+
+/* Asset Cards */
+.wallet-assets-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 12px;
+}
+
+.asset-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.2s ease;
+}
+
+.asset-card:hover {
+    border-color: rgba(0, 210, 255, 0.2);
+    transform: translateY(-1px);
+}
+
+.asset-card-left {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.asset-symbol {
+    font-family: var(--font-heading);
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.asset-balance {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-family: 'Inter', monospace;
+}
+
+.asset-card-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+
+.asset-usd-value {
+    font-size: 16px;
+    font-weight: 600;
+    font-family: 'Inter', monospace;
+}
+
+.asset-change-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.asset-change-badge.positive {
+    background: rgba(0, 245, 160, 0.1);
+    color: var(--green-bull);
+}
+
+.asset-change-badge.negative {
+    background: rgba(255, 73, 92, 0.1);
+    color: var(--red-bear);
+}
+
+.asset-change-badge.neutral {
+    color: var(--text-muted);
+}
+
+.wallet-error {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+}
+
+/* ============================
+   Trade Confirmation Modal
+   ============================ */
+.trade-modal-card {
+    max-width: 520px;
+    width: 90%;
+}
+
+.trade-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.trade-pair-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.trade-pair-symbol {
+    font-family: var(--font-heading);
+    font-size: 24px;
+    font-weight: 800;
+}
+
+.trade-levels-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+}
+
+.trade-level {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-align: center;
+    padding: 12px 8px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-color);
+}
+
+.trade-level-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.trade-level-value {
+    font-family: 'Inter', monospace;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.trade-level-pct {
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.trade-level.sl .trade-level-value,
+.trade-level.sl .trade-level-pct { color: var(--red-bear); }
+
+.trade-level.tp .trade-level-value,
+.trade-level.tp .trade-level-pct { color: var(--green-bull); }
+
+/* Sizing Section */
+.trade-sizing-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.trade-sizing-section h4 {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.trade-sizing-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.trade-sizing-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.trade-sizing-field label {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.trade-sizing-field input {
+    background: #07090e;
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 14px;
+    outline: none;
+}
+
+.trade-sizing-field input:focus {
+    border-color: var(--accent-cyan);
+}
+
+.trade-sizing-results {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.trade-sizing-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Warning */
+.trade-warning {
+    background: rgba(255, 183, 3, 0.08);
+    border: 1px solid rgba(255, 183, 3, 0.25);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 12px;
+    color: var(--amber-warning);
+    line-height: 1.5;
+}
+
+/* Action Buttons */
+.trade-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.trade-actions .btn-outline {
+    flex: 1;
+}
+
+.btn-danger-hold {
+    flex: 2;
+    position: relative;
+    padding: 12px 20px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 73, 92, 0.4);
+    background: rgba(255, 73, 92, 0.1);
+    color: var(--red-bear);
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    overflow: hidden;
+    transition: all 0.2s ease;
+    font-family: var(--font-sans);
+}
+
+.btn-danger-hold:hover {
+    background: rgba(255, 73, 92, 0.2);
+}
+
+.btn-danger-hold .hold-progress {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0%;
+    background: rgba(255, 73, 92, 0.3);
+    transition: width 0.1s linear;
+    pointer-events: none;
+}
+
+.btn-danger-hold.holding .hold-progress {
+    transition: width 3s linear;
+    width: 100%;
+}
+
+.btn-danger-hold.confirmed {
+    background: rgba(0, 245, 160, 0.15);
+    border-color: rgba(0, 245, 160, 0.4);
+    color: var(--green-bull);
+}
+
+.btn-danger-hold .hold-text {
+    position: relative;
+    z-index: 1;
+}
+
+/* Trade Result */
+.trade-result {
+    padding: 14px;
+    border-radius: 8px;
+    font-size: 12px;
+}
+
+.trade-result.success {
+    background: rgba(0, 245, 160, 0.08);
+    border: 1px solid rgba(0, 245, 160, 0.25);
+    color: var(--green-bull);
+}
+
+.trade-result.error {
+    background: rgba(255, 73, 92, 0.08);
+    border: 1px solid rgba(255, 73, 92, 0.25);
+    color: var(--red-bear);
+}
+
+.trade-result-content {
+    line-height: 1.6;
+}
+
+/* Execute button on signal cards */
+.btn-execute-trade {
+    width: 100%;
+    padding: 8px;
+    margin-top: 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 245, 160, 0.25);
+    background: rgba(0, 245, 160, 0.06);
+    color: var(--green-bull);
+    font-weight: 600;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: var(--font-sans);
+}
+
+.btn-execute-trade:hover {
+    background: rgba(0, 245, 160, 0.15);
+    border-color: rgba(0, 245, 160, 0.4);
+}

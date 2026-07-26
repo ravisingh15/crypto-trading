@@ -285,4 +285,507 @@ document.addEventListener("DOMContentLoaded", () => {
         calcSlTarget.textContent = `$${stopLossPrice.toFixed(4)} (-${((stopDistance / price) * 100).toFixed(2)}%)`;
         calcTpTarget.textContent = `$${takeProfitPrice.toFixed(4)} (+${(((2 * stopDistance) / price) * 100).toFixed(2)}%)`;
     }
+
+    // ================================================
+    // Tab Navigation: Screener ↔ Trade Signals
+    // ================================================
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const screenerPanel = document.getElementById('screener-panel');
+    const screenerTableSection = document.getElementById('screener-table-section');
+    const signalsPanel = document.getElementById('signals-panel');
+
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            tabBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            const tab = btn.dataset.tab;
+            if (tab === 'screener') {
+                screenerPanel.style.display = '';
+                screenerTableSection.style.display = '';
+                signalsPanel.style.display = 'none';
+            } else {
+                screenerPanel.style.display = 'none';
+                screenerTableSection.style.display = 'none';
+                signalsPanel.style.display = '';
+                // Auto-scan on first tab switch
+                if (!signalsScanDone) {
+                    scanTradeSignals();
+                }
+            }
+        });
+    });
+
+    // ================================================
+    // Trade Signals Panel Logic
+    // ================================================
+    const btnScanSignals = document.getElementById('btn-scan-signals');
+    const rrSelect = document.getElementById('rr-select');
+    const signalTimeframeSelect = document.getElementById('signal-timeframe-select');
+    const confidenceSelect = document.getElementById('confidence-select');
+    const directionFilter = document.getElementById('direction-filter');
+    const signalCardsGrid = document.getElementById('signal-cards-grid');
+    const signalRecordsCount = document.getElementById('signal-records-count');
+    const signalCountBadge = document.getElementById('signal-count-badge');
+
+    let signalsScanDone = false;
+    let currentSignals = [];
+
+    btnScanSignals.addEventListener('click', scanTradeSignals);
+
+    async function scanTradeSignals() {
+        const interval = signalTimeframeSelect.value;
+        const rr = rrSelect.value;
+        const minConfidence = parseInt(confidenceSelect.value);
+
+        // Show loading state
+        signalCardsGrid.innerHTML = `
+            <div class="signal-loading glass-card">
+                <div class="spinner"></div>
+                <p>Scanning 24 pairs for active entry signals on <strong>${interval}</strong> timeframe...</p>
+            </div>
+        `;
+        btnScanSignals.disabled = true;
+        btnScanSignals.textContent = '⏳ Scanning...';
+
+        try {
+            const res = await window.cryptoAPI.getTradeSignals(interval, rr, 3, minConfidence);
+            currentSignals = res.signals || [];
+            signalsScanDone = true;
+            renderSignalCards();
+        } catch (err) {
+            signalCardsGrid.innerHTML = `
+                <div class="signal-loading glass-card">
+                    <p style="color: var(--red-bear);">❌ Failed to scan signals. Is the backend running?</p>
+                </div>
+            `;
+        }
+
+        btnScanSignals.disabled = false;
+        btnScanSignals.innerHTML = '<span class="scan-icon">🎯</span> Scan Now';
+    }
+
+    function renderSignalCards() {
+        let filtered = [...currentSignals];
+
+        // Direction filter
+        const dirFilter = directionFilter.value;
+        if (dirFilter !== 'ALL') {
+            filtered = filtered.filter(s => s.direction === dirFilter);
+        }
+
+        signalRecordsCount.textContent = `${filtered.length} Active Signal${filtered.length !== 1 ? 's' : ''}`;
+        signalCountBadge.textContent = filtered.length;
+
+        if (filtered.length === 0) {
+            signalCardsGrid.innerHTML = `
+                <div class="signal-loading glass-card">
+                    <p>No active trade signals found. Try lowering the confidence filter or changing the timeframe.</p>
+                </div>
+            `;
+            return;
+        }
+
+        signalCardsGrid.innerHTML = filtered.map(sig => {
+            const dirClass = sig.direction === 'LONG' ? 'long' : 'short';
+            const dirLabel = sig.direction === 'LONG' ? '▲ LONG' : '▼ SHORT';
+
+            // Freshness
+            let freshnessClass, freshnessLabel;
+            if (sig.bars_ago === 0) {
+                freshnessClass = 'fresh';
+                freshnessLabel = 'Current bar';
+            } else if (sig.bars_ago === 1) {
+                freshnessClass = 'recent';
+                freshnessLabel = '1 bar ago';
+            } else {
+                freshnessClass = 'aging';
+                freshnessLabel = `${sig.bars_ago} bars ago`;
+            }
+
+            // Confidence class
+            let confClass = 'low';
+            if (sig.confidence >= 70) confClass = 'high';
+            else if (sig.confidence >= 40) confClass = 'medium';
+
+            // Price formatting
+            const fmt = (p) => {
+                if (p >= 1000) return p.toLocaleString(undefined, { maximumFractionDigits: 2 });
+                if (p >= 1) return p.toFixed(4);
+                return p.toFixed(6);
+            };
+
+            const slLabel = sig.direction === 'LONG' ? `−${sig.sl_distance_pct}%` : `+${sig.sl_distance_pct}%`;
+            const tpLabel = sig.direction === 'LONG' ? `+${sig.tp_distance_pct}%` : `−${sig.tp_distance_pct}%`;
+
+            return `
+                <div class="signal-card">
+                    <div class="signal-card-header">
+                        <div class="signal-symbol-group">
+                            <span class="signal-symbol">${sig.symbol.replace('USDT', '')}</span>
+                            <span class="direction-badge ${dirClass}">${dirLabel}</span>
+                        </div>
+                        <div class="signal-freshness">
+                            <span class="freshness-dot ${freshnessClass}"></span>
+                            ${freshnessLabel}
+                        </div>
+                    </div>
+
+                    <div class="signal-card-body">
+                        <div class="price-levels">
+                            <div class="price-level sl">
+                                <span class="price-level-label">🛑 Stop Loss</span>
+                                <span class="price-level-value">$${fmt(sig.stop_loss)}</span>
+                                <span class="price-level-pct">${slLabel}</span>
+                            </div>
+                            <div class="price-level entry">
+                                <span class="price-level-label">📍 Entry</span>
+                                <span class="price-level-value">$${fmt(sig.entry_price)}</span>
+                                <span class="price-level-pct">R:R ${sig.rr_ratio}x</span>
+                            </div>
+                            <div class="price-level tp">
+                                <span class="price-level-label">🎯 Take Profit</span>
+                                <span class="price-level-value">$${fmt(sig.take_profit)}</span>
+                                <span class="price-level-pct">${tpLabel}</span>
+                            </div>
+                        </div>
+
+                        <div class="confidence-section">
+                            <span style="font-size:11px; color:var(--text-muted);">Confidence</span>
+                            <div class="confidence-bar-track">
+                                <div class="confidence-bar-fill ${confClass}" style="width:${sig.confidence}%"></div>
+                            </div>
+                            <span class="confidence-label">${sig.confidence}%</span>
+                        </div>
+                    </div>
+
+                    <div class="signal-card-footer">
+                        <span class="signal-strategy-name">${sig.strategy}</span>
+                        <div class="signal-meta-row">
+                            <span class="signal-meta-item">RSI: ${sig.rsi || '—'}</span>
+                            <span class="signal-meta-item">RVOL: ${sig.rvol || '—'}x</span>
+                        </div>
+                    </div>
+
+                    <div style="padding: 0 20px 16px 20px;">
+                        <button class="btn-execute-trade" data-symbol="${sig.symbol}" data-strategy="${sig.strategy}" data-direction="${sig.direction}" data-entry="${sig.entry_price}" data-sl="${sig.stop_loss}" data-tp="${sig.take_profit}" data-sl-pct="${sig.sl_distance_pct}" data-tp-pct="${sig.tp_distance_pct}" data-rr="${sig.rr_ratio}">
+                            ⚡ Execute Trade (Entry + SL/TP)
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Attach Trade Execute click listeners
+        document.querySelectorAll('.btn-execute-trade').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const sigData = {
+                    symbol: btn.dataset.symbol,
+                    strategy: btn.dataset.strategy,
+                    direction: btn.dataset.direction,
+                    entry: parseFloat(btn.dataset.entry),
+                    sl: parseFloat(btn.dataset.sl),
+                    tp: parseFloat(btn.dataset.tp),
+                    slPct: parseFloat(btn.dataset.slPct),
+                    tpPct: parseFloat(btn.dataset.tpPct),
+                    rr: btn.dataset.rr,
+                };
+                openTradeModal(sigData);
+            });
+        });
+    }
+
+    // Re-render signal cards when direction filter changes
+    directionFilter.addEventListener('change', renderSignalCards);
+
+    // ================================================
+    // Wallet Tab Logic
+    // ================================================
+    const walletPanel = document.getElementById('wallet-panel');
+    const portfolioTotalValue = document.getElementById('portfolio-total-value');
+    const portfolioAssetCount = document.getElementById('portfolio-asset-count');
+    const portfolioTradeStatus = document.getElementById('portfolio-trade-status');
+    const walletAssetsGrid = document.getElementById('wallet-assets-grid');
+    const btnRefreshWallet = document.getElementById('btn-refresh-wallet');
+
+    let walletLoadedOnce = false;
+
+    btnRefreshWallet.addEventListener('click', loadWallet);
+
+    async function loadWallet() {
+        walletAssetsGrid.innerHTML = `
+            <div class="signal-loading glass-card">
+                <div class="spinner"></div>
+                <p>Fetching account balances & market values...</p>
+            </div>
+        `;
+
+        const res = await window.cryptoAPI.getWallet();
+
+        if (res.error) {
+            portfolioTotalValue.textContent = '$0.00';
+            portfolioAssetCount.textContent = 'API Error';
+            portfolioTradeStatus.className = 'portfolio-status-label no-trade';
+            portfolioTradeStatus.textContent = '⚠️ API Key Error';
+
+            walletAssetsGrid.innerHTML = `
+                <div class="wallet-error glass-card">
+                    <p style="color: var(--red-bear); font-weight: 600; margin-bottom: 8px;">❌ ${res.error}</p>
+                    <p style="font-size: 12px; color: var(--text-muted);">Please check your API_KEY and SECRET_KEY in <code>.env</code> and ensure Spot trading permissions are enabled.</p>
+                </div>
+            `;
+            return;
+        }
+
+        walletLoadedOnce = true;
+        portfolioTotalValue.textContent = `$${res.total_usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        portfolioAssetCount.textContent = `${res.asset_count} Assets`;
+
+        if (res.can_trade) {
+            portfolioTradeStatus.className = 'portfolio-status-label can-trade';
+            portfolioTradeStatus.textContent = '🟢 Spot Trading Enabled';
+        } else {
+            portfolioTradeStatus.className = 'portfolio-status-label no-trade';
+            portfolioTradeStatus.textContent = '🟡 Read-Only API';
+        }
+
+        if (!res.balances || res.balances.length === 0) {
+            walletAssetsGrid.innerHTML = `
+                <div class="wallet-error glass-card">
+                    <p>No non-zero balances found in Binance Spot account.</p>
+                </div>
+            `;
+            return;
+        }
+
+        walletAssetsGrid.innerHTML = res.balances.map(b => {
+            let changeClass = 'neutral';
+            let changeSign = '';
+            if (b.change_24h > 0) { changeClass = 'positive'; changeSign = '+'; }
+            else if (b.change_24h < 0) { changeClass = 'negative'; }
+
+            return `
+                <div class="asset-card">
+                    <div class="asset-card-left">
+                        <span class="asset-symbol">${b.asset}</span>
+                        <span class="asset-balance">Balance: ${b.total.toLocaleString()} ${b.asset}</span>
+                        ${b.locked > 0 ? `<span style="font-size:10px; color:var(--amber-warning);">In Orders: ${b.locked}</span>` : ''}
+                    </div>
+                    <div class="asset-card-right">
+                        <span class="asset-usd-value">$${b.usd_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        ${b.asset !== 'USDT' && b.asset !== 'BUSD' ? `<span class="asset-change-badge ${changeClass}">${changeSign}${b.change_24h}%</span>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // Update Tab Nav for Wallet
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.tab;
+            if (tab === 'wallet') {
+                screenerPanel.style.display = 'none';
+                screenerTableSection.style.display = 'none';
+                signalsPanel.style.display = 'none';
+                walletPanel.style.display = '';
+                if (!walletLoadedOnce) {
+                    loadWallet();
+                }
+            } else if (tab === 'screener') {
+                walletPanel.style.display = 'none';
+            } else if (tab === 'signals') {
+                walletPanel.style.display = 'none';
+            }
+        });
+    });
+
+    // ================================================
+    // Trade Confirmation Modal Logic
+    // ================================================
+    const tradeModal = document.getElementById('trade-modal');
+    const btnCloseTradeModal = document.getElementById('btn-close-trade-modal');
+    const btnCancelTrade = document.getElementById('btn-cancel-trade');
+    const btnConfirmTrade = document.getElementById('btn-confirm-trade');
+
+    const tradePairSymbol = document.getElementById('trade-pair-symbol');
+    const tradeDirectionBadge = document.getElementById('trade-direction-badge');
+    const tradeEntryPrice = document.getElementById('trade-entry-price');
+    const tradeSlPrice = document.getElementById('trade-sl-price');
+    const tradeSlPct = document.getElementById('trade-sl-pct');
+    const tradeTpPrice = document.getElementById('trade-tp-price');
+    const tradeTpPct = document.getElementById('trade-tp-pct');
+
+    const tradeAccountSize = document.getElementById('trade-account-size');
+    const tradeRiskPct = document.getElementById('trade-risk-pct');
+    const tradeDollarRisk = document.getElementById('trade-dollar-risk');
+    const tradePositionSize = document.getElementById('trade-position-size');
+    const tradePositionValue = document.getElementById('trade-position-value');
+    const tradeRrDisplay = document.getElementById('trade-rr-display');
+
+    const tradeResult = document.getElementById('trade-result');
+    const tradeResultContent = document.getElementById('trade-result-content');
+
+    let activeTradeData = null;
+    let holdTimer = null;
+    let holdStartTime = 0;
+
+    btnCloseTradeModal.addEventListener('click', closeTradeModal);
+    btnCancelTrade.addEventListener('click', closeTradeModal);
+
+    tradeAccountSize.addEventListener('input', recalculateTradeSizing);
+    tradeRiskPct.addEventListener('input', recalculateTradeSizing);
+
+    function openTradeModal(sigData) {
+        activeTradeData = sigData;
+
+        tradePairSymbol.textContent = sigData.symbol;
+        tradeDirectionBadge.className = `direction-badge ${sigData.direction === 'LONG' ? 'long' : 'short'}`;
+        tradeDirectionBadge.textContent = sigData.direction === 'LONG' ? '▲ LONG' : '▼ SHORT';
+
+        const fmt = (p) => p >= 1000 ? p.toLocaleString(undefined, { maximumFractionDigits: 2 }) : p >= 1 ? p.toFixed(4) : p.toFixed(6);
+
+        tradeEntryPrice.textContent = `$${fmt(sigData.entry)}`;
+        tradeSlPrice.textContent = `$${fmt(sigData.sl)}`;
+        tradeSlPct.textContent = sigData.direction === 'LONG' ? `−${sigData.slPct}%` : `+${sigData.slPct}%`;
+        tradeTpPrice.textContent = `$${fmt(sigData.tp)}`;
+        tradeTpPct.textContent = sigData.direction === 'LONG' ? `+${sigData.tpPct}%` : `−${sigData.tpPct}%`;
+        tradeRrDisplay.textContent = `1:${sigData.rr}`;
+
+        tradeResult.style.display = 'none';
+        resetHoldButton();
+
+        recalculateTradeSizing();
+
+        tradeModal.classList.add('active');
+    }
+
+    function closeTradeModal() {
+        tradeModal.classList.remove('active');
+        resetHoldButton();
+    }
+
+    function recalculateTradeSizing() {
+        if (!activeTradeData) return;
+
+        const account = parseFloat(tradeAccountSize.value) || 1000;
+        const riskPct = parseFloat(tradeRiskPct.value) || 2;
+
+        const dollarRisk = account * (riskPct / 100);
+        const stopDistance = Math.abs(activeTradeData.entry - activeTradeData.sl);
+
+        let units = 0;
+        if (stopDistance > 0) {
+            units = dollarRisk / stopDistance;
+        }
+
+        const positionVal = units * activeTradeData.entry;
+
+        tradeDollarRisk.textContent = `$${dollarRisk.toFixed(2)}`;
+        tradePositionSize.textContent = `${units.toFixed(6)} ${activeTradeData.symbol.replace('USDT', '')}`;
+        tradePositionValue.textContent = `$${positionVal.toFixed(2)}`;
+    }
+
+    // 3-Second Hold to Execute Button Interaction
+    const holdProgress = btnConfirmTrade.querySelector('.hold-progress');
+    const holdText = btnConfirmTrade.querySelector('.hold-text');
+
+    function resetHoldButton() {
+        if (holdTimer) clearInterval(holdTimer);
+        holdTimer = null;
+        btnConfirmTrade.classList.remove('holding', 'confirmed');
+        holdProgress.style.width = '0%';
+        holdText.textContent = 'Hold 3s to Execute';
+        btnConfirmTrade.disabled = false;
+    }
+
+    function startHold(e) {
+        e.preventDefault();
+        if (btnConfirmTrade.disabled) return;
+
+        btnConfirmTrade.classList.add('holding');
+        holdStartTime = Date.now();
+
+        holdTimer = setInterval(() => {
+            const elapsed = Date.now() - holdStartTime;
+            const pct = Math.min(100, (elapsed / 3000) * 100);
+            holdProgress.style.width = `${pct}%`;
+
+            if (elapsed >= 3000) {
+                clearInterval(holdTimer);
+                holdTimer = null;
+                btnConfirmTrade.classList.remove('holding');
+                btnConfirmTrade.classList.add('confirmed');
+                holdText.textContent = '⏳ Placing Order...';
+                btnConfirmTrade.disabled = true;
+
+                executeLiveTrade();
+            }
+        }, 50);
+    }
+
+    function cancelHold() {
+        if (btnConfirmTrade.classList.contains('confirmed')) return;
+        resetHoldButton();
+    }
+
+    btnConfirmTrade.addEventListener('mousedown', startHold);
+    btnConfirmTrade.addEventListener('mouseup', cancelHold);
+    btnConfirmTrade.addEventListener('mouseleave', cancelHold);
+    btnConfirmTrade.addEventListener('touchstart', startHold);
+    btnConfirmTrade.addEventListener('touchend', cancelHold);
+
+    async function executeLiveTrade() {
+        if (!activeTradeData) return;
+
+        const account = parseFloat(tradeAccountSize.value) || 1000;
+        const riskPct = parseFloat(tradeRiskPct.value) || 2;
+        const dollarRisk = account * (riskPct / 100);
+        const stopDistance = Math.abs(activeTradeData.entry - activeTradeData.sl);
+        const qty = stopDistance > 0 ? (dollarRisk / stopDistance) : 0;
+
+        const side = activeTradeData.direction === 'LONG' ? 'BUY' : 'SELL';
+
+        const orderData = {
+            symbol: activeTradeData.symbol,
+            side: side,
+            order_type: 'MARKET',
+            quantity: qty,
+            stop_loss: activeTradeData.sl,
+            take_profit: activeTradeData.tp,
+        };
+
+        tradeResult.style.display = 'block';
+        tradeResult.className = 'trade-result';
+        tradeResultContent.innerHTML = `<div class="spinner"></div> Sending order to Binance API...`;
+
+        const res = await window.cryptoAPI.placeOrder(orderData);
+
+        if (res.error) {
+            tradeResult.className = 'trade-result error';
+            tradeResultContent.innerHTML = `
+                <strong>❌ Order Execution Failed</strong><br>
+                <span>${res.error}</span>
+            `;
+            resetHoldButton();
+        } else {
+            tradeResult.className = 'trade-result success';
+            let msg = `<strong>✅ ${res.message}</strong><br>`;
+            if (res.entry_order) {
+                msg += `Entry Order ID: <code>${res.entry_order.orderId || 'Filled'}</code><br>`;
+            }
+            if (res.sl_tp_order) {
+                msg += `OCO SL/TP Order List ID: <code>${res.sl_tp_order.orderListId || 'Active'}</code><br>`;
+            }
+            tradeResultContent.innerHTML = msg;
+
+            btnConfirmTrade.disabled = true;
+            holdText.textContent = '✓ Executed';
+
+            // Refresh wallet if opened
+            walletLoadedOnce = false;
+        }
+    }
 });
+
+

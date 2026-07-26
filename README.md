@@ -1,32 +1,44 @@
-#  Binance Live Crypto Analysis & Screener
+# Binance Live Crypto Analysis & Screener
 
-> A high-performance, real-time Cryptocurrency Market Screener and Technical Analysis platform powered by the Binance REST API. Features parallel multi-factor pair screening, vectorized technical indicators, signal scoring, interactive web dashboard, and dedicated Jupyter notebooks for exploratory data analysis.
+> A high-performance, real-time Cryptocurrency Market Screener and Technical Analysis platform powered by the Binance REST API. Features parallel multi-factor pair screening, vectorized technical indicators, signal scoring, an interactive web dashboard, and dedicated Jupyter notebooks for exploratory data analysis.
 
 ---
 
-## 🌟 Key Features
+## Key Features
 
-1. **🔒 Secure Credential Management**:
+1. **Secure Credential Management**:
    - Strictly git-ignored `.env` file for private `API_KEY` and `SECRET_KEY`.
    - `.env.example` template for public repository deployment without secret leaks.
-2. **📈 Real-Time Technical Analysis Engine**:
+
+2. **Real-Time Technical Analysis Engine**:
    - **RSI (14)**: Relative Strength Index oversold (<30) and overbought (>70) detection.
    - **MACD (12, 26, 9)**: Bullish & Bearish signal line crossover tracking.
    - **EMA Stack (9, 21, 50, 200)**: Trend direction stack & Golden Cross identification.
-   - **Bollinger Bands (20, 2)**: Bandwidth % calculation and volatility compression.
+   - **Bollinger Bands (20, 2)**: Bandwidth percentage calculation and volatility compression.
    - **RVOL (Relative Volume)**: Volume spike detection vs 20-period moving average.
    - **ATR (14)**: Average True Range calculation for dynamic Stop Loss & Take Profit targets.
-3. **⚡ Multi-Factor Crypto Screener**:
+
+3. **Multi-Factor Crypto Screener**:
    - Parallel multi-threaded scanning across Binance USDT pairs.
    - Composite Signal Scoring model (-100 to +100) categorizing pairs into **STRONG BUY**, **BUY**, **NEUTRAL**, **SELL**, or **STRONG SELL**.
    - Sector/Category filters (Layer 1, AI / Data, DeFi, Meme, Layer 2).
-4. **📊 Interactive Web Dashboard**:
+
+4. **Interactive Web Dashboard & Live Trading Terminal**:
    - Glassmorphic dark trading UI built with vanilla HTML/CSS/JS.
-   - Live header ticker strip for top market assets.
-   - Multi-column sortable table with instant search and filter controls.
+   - **Trade Signals Terminal**: 1-click execution for algorithmic trade setups, generating OCO (Stop Loss + Take Profit) orders dynamically.
+   - **Live Wallet Integration**: Real-time Binance spot balances, 24-hour asset changes, and aggregate portfolio value calculation.
    - Canvas-based candlestick charting modal with EMA overlays and interactive risk position calculator.
-5. **📓 Interactive Jupyter Notebooks**:
-   - `01_binance_data_exploration.ipynb`: Market summary, 24h volume leaders, and candlestick ingestion.
+   
+   ![Market Screener Dashboard](assets/screenshots/screener_dashboard.png)
+   
+   ![Trade Signals Terminal](assets/screenshots/trade_signals_dashboard.png)
+   
+   ![Wallet Dashboard](assets/screenshots/wallet_panel.png)
+   
+   ![Trade Confirmation Modal](assets/screenshots/trade_modal.png)
+
+5. **Interactive Jupyter Notebooks**:
+   - `01_binance_data_exploration.ipynb`: Market summary, 24-hour volume leaders, and candlestick ingestion.
    - `02_indicator_deep_dive.ipynb`: Multi-indicator plotting with Plotly dark themes.
    - `03_screener_backtest.ipynb`: Backtesting technical signal rules against historical klines.
    - `04_strategy_backtest_comparison.ipynb`: 20-strategy comparison with win rate, Sharpe ratio, equity curves, and composite ranking.
@@ -35,7 +47,7 @@
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 crypto-analysis/
@@ -44,6 +56,8 @@ crypto-analysis/
 ├── .gitignore                         # Standard exclusion rules
 ├── README.md                          # Documentation & project guide
 ├── requirements.txt                   # Dependencies (FastAPI, Pandas, Jupyter, Plotly)
+├── assets/
+│   └── screenshots/                   # UI documentation screenshots
 ├── notebooks/                         # Jupyter Notebooks for analysis
 │   ├── 01_binance_data_exploration.ipynb
 │   ├── 02_indicator_deep_dive.ipynb
@@ -69,7 +83,7 @@ crypto-analysis/
 
 ---
 
-## 🚀 Quick Start Guide
+## Quick Start Guide
 
 ### 1. Prerequisites
 Ensure you have **Python 3.10+** installed.
@@ -88,23 +102,23 @@ pip install -r requirements.txt
 ```
 
 ### 4. Run the Screener Server & Web Dashboard
-Launch the FastAPI server:
+Launch the FastAPI server with Uvicorn:
 ```bash
-python -m backend.app
+python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
 ```
-Open your browser and navigate to:
-👉 **`http://127.0.0.1:8000`**
+Open your browser and navigate to the static dashboard:
+**`http://127.0.0.1:8000/static/index.html`**
 
 ---
 
-## 📓 Using Jupyter Notebooks
+## Using Jupyter Notebooks
 
 Launch Jupyter Notebook to perform custom research and backtesting:
 ```bash
 jupyter notebook
 ```
 Navigate to the `notebooks/` directory and open any of the notebooks:
-- **`01_binance_data_exploration.ipynb`**: Fetch 24h market metrics & ticker statistics.
+- **`01_binance_data_exploration.ipynb`**: Fetch 24-hour market metrics & ticker statistics.
 - **`02_indicator_deep_dive.ipynb`**: Plot RSI, MACD, and EMA charts interactively.
 - **`03_screener_backtest.ipynb`**: Test technical signal win-rates against historical candles.
 - **`04_strategy_backtest_comparison.ipynb`**: Full 20-strategy backtest comparison with performance metrics, heatmaps, and equity curves.
@@ -113,7 +127,7 @@ Navigate to the `notebooks/` directory and open any of the notebooks:
 
 ---
 
-## 🛡️ Security Best Practices
+## Security Best Practices
 
 - **Never hardcode API Keys**: Always read credentials from `.env` via `backend/config.py`.
 - **Binance API Key Permissions**: For read-only screening, enable **only Read Info / Market Data** permissions on Binance. Disable Withdrawal permissions on your API key.
@@ -121,5 +135,5 @@ Navigate to the `notebooks/` directory and open any of the notebooks:
 
 ---
 
-## 📜 License
+## License
 This project is open source and available under the [MIT License](LICENSE).

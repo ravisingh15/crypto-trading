@@ -36,6 +36,75 @@ class CryptoAPI {
             return null;
         }
     }
+
+    async getTradeSignals(interval = "1h", rr = "1:2.0", lookback = 3, minConfidence = 0) {
+        try {
+            const params = new URLSearchParams({
+                interval,
+                rr,
+                lookback,
+                min_confidence: minConfidence,
+            });
+            const response = await fetch(`${this.baseURL}/api/trade-signals?${params}`);
+            if (!response.ok) throw new Error("Failed to fetch trade signals");
+            return await response.json();
+        } catch (error) {
+            console.error("Backend trade-signals API error:", error);
+            return { signals: [] };
+        }
+    }
+
+    async getWallet() {
+        try {
+            const response = await fetch(`${this.baseURL}/api/wallet`);
+            if (!response.ok) throw new Error("Failed to fetch wallet");
+            return await response.json();
+        } catch (error) {
+            console.error("Wallet API error:", error);
+            return { error: error.message };
+        }
+    }
+
+    async placeOrder(orderData) {
+        try {
+            const response = await fetch(`${this.baseURL}/api/order`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(orderData),
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || "Order failed");
+            return result;
+        } catch (error) {
+            console.error("Order API error:", error);
+            return { error: error.message };
+        }
+    }
+
+    async getOpenOrders(symbol = null) {
+        try {
+            const params = symbol ? `?symbol=${symbol}` : "";
+            const response = await fetch(`${this.baseURL}/api/orders/open${params}`);
+            if (!response.ok) throw new Error("Failed to fetch open orders");
+            return await response.json();
+        } catch (error) {
+            console.error("Open orders API error:", error);
+            return { orders: [] };
+        }
+    }
+
+    async cancelOrder(symbol, orderId) {
+        try {
+            const response = await fetch(`${this.baseURL}/api/order/${symbol}/${orderId}`, {
+                method: "DELETE",
+            });
+            if (!response.ok) throw new Error("Failed to cancel order");
+            return await response.json();
+        } catch (error) {
+            console.error("Cancel order API error:", error);
+            return { error: error.message };
+        }
+    }
 }
 
 window.cryptoAPI = new CryptoAPI();

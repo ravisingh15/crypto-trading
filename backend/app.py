@@ -1,13 +1,16 @@
 import os
 from pathlib import Path
-from fastapi import FastAPI, Query, HTTPException
+from typing import Any, Optional
+from fastapi import FastAPI, Query, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
 from backend.config import HOST, PORT, DEBUG, BASE_DIR
 from backend.binance_client import binance_client
 from backend.indicators import enrich_klines_dataframe
 from backend.screener import screener_engine
+from backend.trade_signals import scan_all_signals
 
 app = FastAPI(
     title="Binance Crypto Screener & Analysis API",
@@ -124,24 +127,239 @@ def get_symbol_klines(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/account")
-def get_account_balances():
-    """Fetch private Binance account balances (Requires valid API_KEY and SECRET_KEY in .env)."""
+@app.get("/api/trade-signals")
+def get_trade_signals(
+    interval: str = Query("1h", description="Candle timeframe: 15m, 1h, 4h"),
+    rr: str = Query("1:2.0", description="Risk:Reward ratio: 1:1.5, 1:2.0, 1:3.0"),
+    lookback: int = Query(3, ge=1, le=10, description="Scan last N candles for signals"),
+    min_confidence: int = Query(0, ge=0, le=100, description="Minimum confidence score (0-100)"),
+):
+    """Scan live data for active trade signals with ATR-based SL/TP levels."""
+    try:
+        signals = scan_all_signals(
+            interval=interval,
+            rr_key=rr,
+            lookback_bars=lookback,
+            min_confidence=min_confidence,
+        )
+        return {
+            "interval": interval,
+            "rr_config": rr,
+            "lookback_bars": lookback,
+            "total_signals": len(signals),
+            "signals": signals,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/wallet")
+def get_wallet():
+    """Fetch wallet balances enriched with USD values and total portfolio value."""
     try:
         account_data = binance_client.get_account_info()
-        balances = [
+        raw_balances = [
             b for b in account_data.get("balances", [])
             if float(b["free"]) > 0 or float(b["locked"]) > 0
         ]
+
+        # Fetch all USDT prices for conversion
+        try:
+            all_tickers = binance_client.get_24h_tickers()
+            price_map = {t["symbol"]: float(t["lastPrice"]) for t in all_tickers}
+            change_map = {t["symbol"]: float(t["priceChangePercent"]) for t in all_tickers}
+        except Exception:
+            price_map = {}
+            change_map = {}
+
+        enriched = []
+        total_usd = 0.0
+
+        for b in raw_balances:
+            asset = b["asset"]
+            free = float(b["free"])
+            locked = float(b["locked"])
+            total = free + locked
+
+            # Determine USD value
+            if asset == "USDT":
+                usd_value = total
+                usd_price = 1.0
+                change_24h = 0.0
+            elif asset == "BUSD":
+                usd_value = total
+                usd_price = 1.0
+                change_24h = 0.0
+            else:
+                pair = f"{asset}USDT"
+                usd_price = price_map.get(pair, 0)
+                usd_value = total * usd_price
+                change_24h = change_map.get(pair, 0)
+
+            total_usd += usd_value
+
+            enriched.append({
+                "asset": asset,
+                "free": round(free, 8),
+                "locked": round(locked, 8),
+                "total": round(total, 8),
+                "usd_price": round(usd_price, 6),
+                "usd_value": round(usd_value, 2),
+                "change_24h": round(change_24h, 2),
+            })
+
+        # Sort by USD value descending
+        enriched.sort(key=lambda x: x["usd_value"], reverse=True)
+
         return {
             "can_trade": account_data.get("canTrade", False),
             "account_type": account_data.get("accountType", "SPOT"),
-            "balances": balances
+            "total_usd": round(total_usd, 2),
+            "asset_count": len(enriched),
+            "balances": enriched,
         }
     except ValueError as ve:
         return JSONResponse(status_code=400, content={"error": str(ve)})
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"Failed to fetch account info: {str(e)}"})
+        return JSONResponse(status_code=500, content={"error": f"Failed to fetch wallet: {str(e)}"})
+
+
+class OrderRequest(BaseModel):
+    symbol: str
+    side: str  # BUY or SELL
+    order_type: str = "MARKET"  # MARKET or LIMIT
+    quantity: float
+    price: Optional[float] = None  # Required for LIMIT
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+
+
+@app.post("/api/order")
+def place_order(order: OrderRequest):
+    """
+    Place an order with optional SL/TP.
+    For LONG trades: side=BUY for entry, then OCO SELL for SL+TP.
+    For SHORT exits: side=SELL for entry, then OCO BUY for SL+TP.
+    """
+    try:
+        symbol = order.symbol.upper()
+        side = order.side.upper()
+
+        # Step 1: Get exchange info for proper formatting
+        try:
+            info = binance_client.get_symbol_exchange_info(symbol)
+            filters = {f["filterType"]: f for f in info.get("filters", [])}
+
+            # Extract precision
+            lot_size = filters.get("LOT_SIZE", {})
+            step_size = float(lot_size.get("stepSize", "0.001"))
+            min_qty = float(lot_size.get("minQty", "0.001"))
+
+            price_filter = filters.get("PRICE_FILTER", {})
+            tick_size = float(price_filter.get("tickSize", "0.01"))
+
+            # Format quantity to step size precision
+            precision_qty = len(str(step_size).rstrip('0').split('.')[-1]) if '.' in str(step_size) else 0
+            precision_price = len(str(tick_size).rstrip('0').split('.')[-1]) if '.' in str(tick_size) else 0
+
+            qty = round(order.quantity - (order.quantity % step_size), precision_qty)
+            if qty < min_qty:
+                raise ValueError(f"Quantity {qty} is below minimum {min_qty}")
+        except ValueError:
+            raise
+        except Exception:
+            qty = order.quantity
+            precision_price = 2
+
+        # Step 2: Place entry order
+        if order.order_type == "MARKET":
+            entry_result = binance_client.place_market_order(symbol, side, qty)
+        elif order.order_type == "LIMIT":
+            if not order.price:
+                raise ValueError("Price is required for LIMIT orders")
+            formatted_price = round(order.price - (order.price % tick_size), precision_price)
+            entry_result = binance_client.place_limit_order(symbol, side, qty, formatted_price)
+        else:
+            raise ValueError(f"Unsupported order type: {order.order_type}")
+
+        response = {
+            "entry_order": entry_result,
+            "sl_tp_order": None,
+            "message": f"Entry {order.order_type} {side} order placed successfully",
+        }
+
+        # Step 3: Place OCO for SL + TP if both provided (only for MARKET fills)
+        if order.stop_loss and order.take_profit and order.order_type == "MARKET":
+            exit_side = "SELL" if side == "BUY" else "BUY"
+            sl = round(order.stop_loss - (order.stop_loss % tick_size), precision_price)
+            tp = round(order.take_profit - (order.take_profit % tick_size), precision_price)
+
+            # SL limit price with 0.1% buffer for fills
+            if exit_side == "SELL":
+                sl_limit = round(sl * 0.999, precision_price)
+            else:
+                sl_limit = round(sl * 1.001, precision_price)
+
+            try:
+                oco_result = binance_client.place_oco_order(
+                    symbol=symbol,
+                    side=exit_side,
+                    quantity=qty,
+                    price=tp,
+                    stop_price=sl,
+                    stop_limit_price=sl_limit,
+                )
+                response["sl_tp_order"] = oco_result
+                response["message"] += " + OCO (SL/TP) placed"
+            except Exception as oco_err:
+                response["sl_tp_error"] = str(oco_err)
+                response["message"] += f" (Warning: OCO SL/TP failed: {str(oco_err)})"
+
+        return response
+
+    except ValueError as ve:
+        return JSONResponse(status_code=400, content={"error": str(ve)})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Order failed: {str(e)}"})
+
+
+@app.get("/api/orders/open")
+def get_open_orders(symbol: str = Query(None, description="Symbol to filter, or omit for all")):
+    """List open orders."""
+    try:
+        orders = binance_client.get_open_orders(symbol)
+        return {"count": len(orders), "orders": orders}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.delete("/api/order/{symbol}/{order_id}")
+def cancel_an_order(symbol: str, order_id: int):
+    """Cancel an open order."""
+    try:
+        result = binance_client.cancel_order(symbol.upper(), order_id)
+        return {"message": "Order cancelled", "result": result}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/exchange-info/{symbol}")
+def get_exchange_info(symbol: str):
+    """Get trading rules for a symbol (lot size, tick size, min notional)."""
+    try:
+        info = binance_client.get_symbol_exchange_info(symbol.upper())
+        filters = {f["filterType"]: f for f in info.get("filters", [])}
+        return {
+            "symbol": info.get("symbol"),
+            "status": info.get("status"),
+            "baseAsset": info.get("baseAsset"),
+            "quoteAsset": info.get("quoteAsset"),
+            "lot_size": filters.get("LOT_SIZE"),
+            "price_filter": filters.get("PRICE_FILTER"),
+            "min_notional": filters.get("NOTIONAL") or filters.get("MIN_NOTIONAL"),
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 def np_isnan(val: Any) -> bool:
     try:

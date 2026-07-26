@@ -3,18 +3,18 @@ import numpy as np
 from typing import List, Any, Dict
 
 def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    """Calculate Relative Strength Index (RSI)."""
+    """Calculate Relative Strength Index (RSI) using Wilder's Exponential Smoothing."""
     delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
     
-    # Wilder's Smoothing for RSI
-    gain = gain.combine_first(series.diff().clip(lower=0).ewm(alpha=1/period, adjust=False).mean())
-    loss = loss.combine_first((-series.diff()).clip(lower=0).ewm(alpha=1/period, adjust=False).mean())
+    avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
     
-    rs = gain / (loss + 1e-10)
+    rs = avg_gain / (avg_loss + 1e-10)
     rsi = 100 - (100 / (1 + rs))
     return rsi
+
 
 def calculate_macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Dict[str, pd.Series]:
     """Calculate Moving Average Convergence Divergence (MACD)."""
@@ -59,6 +59,37 @@ def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     atr = tr.ewm(alpha=1/period, adjust=False).mean()
     return atr
+
+def calculate_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> Dict[str, pd.Series]:
+    """Calculate Average Directional Index (ADX) with +DI and -DI.
+    ADX > 25 = strong trend, ADX < 20 = no trend (range-bound).
+    +DI > -DI = bullish pressure, -DI > +DI = bearish pressure.
+    """
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    # Directional movement
+    up_move = high - high.shift(1)
+    down_move = low.shift(1) - low
+
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+
+    plus_dm = pd.Series(plus_dm, index=close.index)
+    minus_dm = pd.Series(minus_dm, index=close.index)
+
+    # Wilder's smoothing (same as ATR)
+    atr = tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    plus_di = 100 * (plus_dm.ewm(alpha=1/period, min_periods=period, adjust=False).mean() / (atr + 1e-10))
+    minus_di = 100 * (minus_dm.ewm(alpha=1/period, min_periods=period, adjust=False).mean() / (atr + 1e-10))
+
+    # DX and ADX
+    dx = 100 * ((plus_di - minus_di).abs() / (plus_di + minus_di + 1e-10))
+    adx = dx.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+
+    return {"adx": adx, "plus_di": plus_di, "minus_di": minus_di}
 
 def calculate_rvol(volume: pd.Series, period: int = 20) -> pd.Series:
     """Calculate Relative Volume (RVOL = current volume / N-period average volume)."""
@@ -199,5 +230,10 @@ def enrich_klines_dataframe(raw_klines: List[List[Any]]) -> pd.DataFrame:
     
     df["vwma_8"] = calculate_vwma(df["close"], df["volume"], 8)
     df["vwma_21"] = calculate_vwma(df["close"], df["volume"], 21)
+
+    adx_dict = calculate_adx(df["high"], df["low"], df["close"], period=14)
+    df["adx"] = adx_dict["adx"]
+    df["plus_di"] = adx_dict["plus_di"]
+    df["minus_di"] = adx_dict["minus_di"]
 
     return df
