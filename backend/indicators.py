@@ -169,6 +169,63 @@ def calculate_supertrend(high: pd.Series, low: pd.Series, close: pd.Series, peri
         "direction": pd.Series(direction, index=close.index)
     }
 
+def detect_rsi_divergence(close: pd.Series, rsi: pd.Series, lookback: int = 20) -> Dict[str, pd.Series]:
+    """
+    Detect RSI divergences (bullish and bearish) using swing point analysis.
+
+    Bullish divergence: price makes lower low, RSI makes higher low
+    Bearish divergence: price makes higher high, RSI makes lower high
+
+    Returns dict with 'bull_divergence' and 'bear_divergence' boolean Series.
+    """
+    n = len(close)
+    bull_div = pd.Series(False, index=close.index)
+    bear_div = pd.Series(False, index=close.index)
+
+    # Need at least lookback*2 bars for meaningful swing detection
+    if n < lookback * 2:
+        return {"bull_divergence": bull_div, "bear_divergence": bear_div}
+
+    close_vals = close.values
+    rsi_vals = rsi.values
+
+    for i in range(lookback * 2, n):
+        window_close = close_vals[i - lookback:i + 1]
+        window_rsi = rsi_vals[i - lookback:i + 1]
+
+        # Find local minima (swing lows) in the window
+        lows = []
+        for j in range(2, len(window_close) - 1):
+            if window_close[j] < window_close[j-1] and window_close[j] < window_close[j+1]:
+                lows.append((j, window_close[j], window_rsi[j]))
+
+        if len(lows) >= 2:
+            prev_low = lows[-2]
+            curr_low = lows[-1]
+            # Bullish divergence: price lower low, RSI higher low
+            if (curr_low[1] < prev_low[1] and
+                not np.isnan(curr_low[2]) and not np.isnan(prev_low[2]) and
+                curr_low[2] > prev_low[2]):
+                bull_div.iloc[i] = True
+
+        # Find local maxima (swing highs) in the window
+        highs = []
+        for j in range(2, len(window_close) - 1):
+            if window_close[j] > window_close[j-1] and window_close[j] > window_close[j+1]:
+                highs.append((j, window_close[j], window_rsi[j]))
+
+        if len(highs) >= 2:
+            prev_high = highs[-2]
+            curr_high = highs[-1]
+            # Bearish divergence: price higher high, RSI lower high
+            if (curr_high[1] > prev_high[1] and
+                not np.isnan(curr_high[2]) and not np.isnan(prev_high[2]) and
+                curr_high[2] < prev_high[2]):
+                bear_div.iloc[i] = True
+
+    return {"bull_divergence": bull_div, "bear_divergence": bear_div}
+
+
 def enrich_klines_dataframe(raw_klines: List[List[Any]]) -> pd.DataFrame:
     """
     Parse raw Binance klines raw array into a structured DataFrame and calculate 
@@ -185,7 +242,8 @@ def enrich_klines_dataframe(raw_klines: List[List[Any]]) -> pd.DataFrame:
     df = pd.DataFrame(raw_klines, columns=columns)
     
     # Cast numerical columns
-    for col in ["open", "high", "low", "close", "volume", "quote_asset_volume"]:
+    for col in ["open", "high", "low", "close", "volume", "quote_asset_volume",
+                "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume"]:
         df[col] = df[col].astype(float)
         
     df["open_time"] = pd.to_datetime(df["open_time"], unit="ms")
@@ -236,4 +294,22 @@ def enrich_klines_dataframe(raw_klines: List[List[Any]]) -> pd.DataFrame:
     df["plus_di"] = adx_dict["plus_di"]
     df["minus_di"] = adx_dict["minus_di"]
 
+    # ======================================================================
+    # NEW INDICATORS (Phase 2-3)
+    # ======================================================================
+
+    # Taker Buy Ratio — demand pressure from raw Binance data
+    df["taker_buy_ratio"] = df["taker_buy_base_asset_volume"] / (df["volume"] + 1e-10)
+    df["taker_buy_ratio_sma"] = df["taker_buy_ratio"].rolling(window=20).mean()
+
+    # Breakout levels — 20-period high/low channels
+    df["high_20"] = df["high"].rolling(window=20).max()
+    df["low_20"] = df["low"].rolling(window=20).min()
+
+    # RSI Divergence detection
+    div = detect_rsi_divergence(df["close"], df["rsi"], lookback=20)
+    df["bull_divergence"] = div["bull_divergence"]
+    df["bear_divergence"] = div["bear_divergence"]
+
     return df
+

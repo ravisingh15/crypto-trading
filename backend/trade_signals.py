@@ -2,6 +2,11 @@
 Trade Signal Scanner with ATR-based Stop-Loss / Take-Profit calculation.
 Scans live Binance data for active strategy signals and returns actionable
 trade setups with entry, SL, TP, and risk metrics.
+
+Key improvements:
+- Dynamic symbol list from top-volume pairs (no hardcoded list)
+- HTF bias field added to each signal for multi-timeframe awareness
+- Symbol list cached per scan cycle to avoid redundant API calls
 """
 import concurrent.futures
 import time
@@ -21,13 +26,40 @@ RR_CONFIGS = {
     '1:3.0': {'sl_mult': 1.0, 'tp_mult': 3.00},
 }
 
-# Symbols to scan
-SCAN_SYMBOLS = [
+# Fallback symbols if dynamic fetch fails
+FALLBACK_SYMBOLS = [
     'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT',
     'ADAUSDT', 'AVAXUSDT', 'NEARUSDT', 'SUIUSDT', 'APTUSDT', 'INJUSDT',
     'DOTUSDT', 'SEIUSDT', 'FETUSDT', 'RENDERUSDT', 'UNIUSDT', 'AAVEUSDT',
     'PENDLEUSDT', 'ARBUSDT', 'OPUSDT', 'PEPEUSDT', 'WIFUSDT', 'BONKUSDT',
 ]
+
+# Dynamic symbol cache
+_dynamic_symbols_cache: Dict[str, Any] = {"symbols": None, "time": 0}
+_SYMBOL_CACHE_TTL = 300  # 5 minutes
+
+
+def _get_dynamic_symbols(max_symbols: int = 30) -> List[str]:
+    """
+    Dynamically fetch top-N symbols by 24h volume.
+    Caches for 5 minutes to avoid hammering the ticker endpoint.
+    """
+    now = time.time()
+    if (_dynamic_symbols_cache["symbols"] is not None and
+            now - _dynamic_symbols_cache["time"] < _SYMBOL_CACHE_TTL):
+        return _dynamic_symbols_cache["symbols"][:max_symbols]
+
+    try:
+        tickers = binance_client.get_usdt_tickers()
+        sorted_tickers = sorted(
+            tickers, key=lambda t: float(t.get("quoteVolume", 0)), reverse=True
+        )
+        symbols = [t["symbol"] for t in sorted_tickers[:max_symbols]]
+        _dynamic_symbols_cache["symbols"] = symbols
+        _dynamic_symbols_cache["time"] = now
+        return symbols
+    except Exception:
+        return FALLBACK_SYMBOLS[:max_symbols]
 
 
 def _calculate_signal_confidence(df: pd.DataFrame, idx: int, direction: str) -> int:
@@ -149,6 +181,13 @@ def scan_symbol_signals(
             # Candle age: how many bars ago was this signal?
             bars_ago = len(df) - 1 - idx
 
+            # Taker buy ratio for order flow context
+            taker_ratio = None
+            if 'taker_buy_ratio' in df.columns:
+                tbr = float(row.get('taker_buy_ratio', 0.5))
+                if not np.isnan(tbr):
+                    taker_ratio = round(tbr, 3)
+
             signal_data = {
                 'symbol': symbol,
                 'strategy': strat_name,
@@ -167,6 +206,7 @@ def scan_symbol_signals(
                 'macd_hist': round(float(row['macd_hist']), 4) if not np.isnan(row['macd_hist']) else None,
                 'rvol': round(float(row['rvol']), 2) if not np.isnan(row['rvol']) else None,
                 'supertrend_dir': int(row['supertrend_dir']),
+                'taker_buy_ratio': taker_ratio,
             }
             signals.append(signal_data)
 
@@ -182,10 +222,11 @@ def scan_all_signals(
 ) -> List[Dict[str, Any]]:
     """
     Scan multiple symbols in parallel for active trade signals.
+    Uses dynamic top-volume symbol list if no symbols specified.
     Returns a list of trade setups sorted by confidence score descending.
     """
     if symbols is None:
-        symbols = SCAN_SYMBOLS
+        symbols = _get_dynamic_symbols(max_symbols=30)
 
     all_signals = []
 

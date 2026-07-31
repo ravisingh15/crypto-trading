@@ -105,6 +105,66 @@ class CryptoAPI {
             return { error: error.message };
         }
     }
+
+    // ================================================
+    // Bot Auto-Trader API
+    // ================================================
+
+    async startBot() {
+        try {
+            const response = await fetch(`${this.baseURL}/api/bot/start`, { method: "POST" });
+            return await response.json();
+        } catch (error) {
+            console.error("Bot start error:", error);
+            return { error: error.message };
+        }
+    }
+
+    async stopBot() {
+        try {
+            const response = await fetch(`${this.baseURL}/api/bot/stop`, { method: "POST" });
+            return await response.json();
+        } catch (error) {
+            console.error("Bot stop error:", error);
+            return { error: error.message };
+        }
+    }
+
+    async getBotStatus() {
+        try {
+            const response = await fetch(`${this.baseURL}/api/bot/status`);
+            if (!response.ok) throw new Error("Failed to fetch bot status");
+            return await response.json();
+        } catch (error) {
+            console.error("Bot status error:", error);
+            return { error: error.message };
+        }
+    }
+
+    async updateBotConfig(config) {
+        try {
+            const response = await fetch(`${this.baseURL}/api/bot/config`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(config),
+            });
+            return await response.json();
+        } catch (error) {
+            console.error("Bot config error:", error);
+            return { error: error.message };
+        }
+    }
+
+    async getBotJournal(limit = 50) {
+        try {
+            const response = await fetch(`${this.baseURL}/api/bot/journal?limit=${limit}`);
+            if (!response.ok) throw new Error("Failed to fetch journal");
+            return await response.json();
+        } catch (error) {
+            console.error("Bot journal error:", error);
+            return { entries: [] };
+        }
+    }
 }
 
 window.cryptoAPI = new CryptoAPI();

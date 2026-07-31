@@ -86,7 +86,8 @@ crypto-analysis/
 ## Quick Start Guide
 
 ### 1. Prerequisites
-Ensure you have **Python 3.10+** installed.
+- Ensure you have **Python 3.10+** installed.
+- A **Binance Account** is required to generate API keys for live data and trading. If you don't have one, you can [sign up here using this referral link](https://www.binance.com/referral/earn-together/refer2earn-usdc/claim?hl=en-IN&ref=GRO_28502_VRJ5Y&utm_source=referral_entrance) to claim a sign-up bonus.
 
 ### 2. Configure Environment Variables
 Copy `.env.example` to `.env` and enter your Binance API Key and Secret:

@@ -91,6 +91,10 @@
                 <button class="tab-btn" data-tab="wallet">
                     <span class="tab-icon">💰</span> Wallet
                 </button>
+                <button class="tab-btn" data-tab="bot">
+                    <span class="tab-icon">🤖</span> Auto Bot
+                    <span class="bot-status-dot" id="bot-status-dot"></span>
+                </button>
             </section>
 
             <!-- Screener Controls Toolbar -->
@@ -251,6 +255,118 @@
                 </div>
             </section>
 
+            <!-- Bot Auto-Trader Panel (Hidden by Default) -->
+            <section class="bot-panel" id="bot-panel" style="display:none;">
+                <!-- Bot Header -->
+                <div class="bot-header glass-card">
+                    <div class="bot-header-left">
+                        <div class="bot-title-row">
+                            <span class="bot-icon">🤖</span>
+                            <h3>Auto-Trader</h3>
+                            <span class="bot-mode-badge" id="bot-mode-badge">PAPER MODE</span>
+                        </div>
+                        <p class="bot-subtitle" id="bot-subtitle">Configure and start the autonomous trading bot</p>
+                    </div>
+                    <div class="bot-header-right">
+                        <button class="bot-toggle-btn" id="btn-bot-toggle">
+                            <span class="bot-toggle-label" id="bot-toggle-label">Start Bot</span>
+                            <span class="bot-toggle-switch" id="bot-toggle-switch"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Bot Stats Row -->
+                <div class="bot-stats-row">
+                    <div class="bot-stat glass-card">
+                        <span class="bot-stat-label">Status</span>
+                        <span class="bot-stat-value" id="bot-stat-status">⏹ Stopped</span>
+                    </div>
+                    <div class="bot-stat glass-card">
+                        <span class="bot-stat-label">Open Positions</span>
+                        <span class="bot-stat-value" id="bot-stat-positions">0 / 3</span>
+                    </div>
+                    <div class="bot-stat glass-card">
+                        <span class="bot-stat-label">Daily P&amp;L</span>
+                        <span class="bot-stat-value" id="bot-stat-pnl">$0.00</span>
+                    </div>
+                    <div class="bot-stat glass-card">
+                        <span class="bot-stat-label">Total Trades</span>
+                        <span class="bot-stat-value" id="bot-stat-trades">0</span>
+                    </div>
+                </div>
+
+                <!-- Bot Config + Positions Side by Side -->
+                <div class="bot-content-grid">
+                    <!-- Config Panel -->
+                    <div class="bot-config glass-card">
+                        <h4>⚙️ Configuration</h4>
+                        <div class="bot-config-grid">
+                            <div class="bot-config-field">
+                                <label>Amount Per Trade (USDT)</label>
+                                <input type="number" id="bot-cfg-amount" value="50" min="10" step="5">
+                            </div>
+                            <div class="bot-config-field">
+                                <label>Leverage</label>
+                                <input type="number" id="bot-cfg-leverage" value="5" min="1" max="125" step="1">
+                            </div>
+                            <div class="bot-config-field">
+                                <label>Min Confidence (0-100)</label>
+                                <input type="number" id="bot-cfg-confidence" value="60" min="0" max="100" step="5">
+                            </div>
+                            <div class="bot-config-field">
+                                <label>Max Open Positions</label>
+                                <input type="number" id="bot-cfg-max-pos" value="3" min="1" max="10">
+                            </div>
+                            <div class="bot-config-field">
+                                <label>Max Daily Loss ($)</label>
+                                <input type="number" id="bot-cfg-max-loss" value="50" min="10" step="10">
+                            </div>
+                            <div class="bot-config-field">
+                                <label>Scan Interval (min)</label>
+                                <input type="number" id="bot-cfg-interval" value="60" min="5" max="1440" step="5">
+                            </div>
+                            <div class="bot-config-field">
+                                <label>Cooldown (hours)</label>
+                                <input type="number" id="bot-cfg-cooldown" value="4" min="0" max="24">
+                            </div>
+                            <div class="bot-config-field">
+                                <label>Market</label>
+                                <select id="bot-cfg-market" class="select-input">
+                                    <option value="futures" selected>Futures (LONG + SHORT)</option>
+                                    <option value="spot">Spot (LONG only)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="bot-config-actions">
+                            <label class="bot-paper-toggle">
+                                <input type="checkbox" id="bot-cfg-paper" checked>
+                                <span>📝 Paper Trading (no real orders)</span>
+                            </label>
+                            <button class="btn btn-outline" id="btn-save-bot-config">💾 Save Config</button>
+                        </div>
+                    </div>
+
+                    <!-- Open Positions -->
+                    <div class="bot-positions glass-card">
+                        <h4>📈 Open Positions</h4>
+                        <div class="bot-positions-list" id="bot-positions-list">
+                            <div class="bot-empty-state">No open positions</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Activity Log -->
+                <div class="bot-log glass-card">
+                    <div class="bot-log-header">
+                        <h4>📋 Activity Log</h4>
+                        <span class="bot-log-count" id="bot-log-count">0 entries</span>
+                    </div>
+                    <div class="bot-log-entries" id="bot-log-entries">
+                        <div class="bot-empty-state">No activity yet. Start the bot to begin scanning.</div>
+                    </div>
+                </div>
+            </section>
+
         </main>
     </div>
 
@@ -290,31 +406,19 @@
                     </div>
                 </div>
 
-                <!-- Position Sizing -->
+                <!-- Amount Input -->
                 <div class="trade-sizing-section">
-                    <h4>Position Sizing</h4>
-                    <div class="trade-sizing-grid">
-                        <div class="trade-sizing-field">
-                            <label>Account Balance ($)</label>
-                            <input type="number" id="trade-account-size" value="1000" min="10">
-                        </div>
-                        <div class="trade-sizing-field">
-                            <label>Risk Per Trade (%)</label>
-                            <input type="number" id="trade-risk-pct" value="2" min="0.1" max="10" step="0.5">
+                    <div class="trade-sizing-field trade-amount-field">
+                        <label>Amount (USDT)</label>
+                        <div class="trade-amount-input-wrap">
+                            <span class="trade-amount-prefix">$</span>
+                            <input type="number" id="trade-amount" value="50" min="1" step="1" placeholder="50">
                         </div>
                     </div>
                     <div class="trade-sizing-results">
                         <div class="trade-sizing-row">
-                            <span>💵 Dollar Risk:</span>
-                            <strong id="trade-dollar-risk">$20.00</strong>
-                        </div>
-                        <div class="trade-sizing-row">
-                            <span>📦 Position Size:</span>
-                            <strong id="trade-position-size">0.00</strong>
-                        </div>
-                        <div class="trade-sizing-row">
-                            <span>💰 Position Value:</span>
-                            <strong id="trade-position-value">$0.00</strong>
+                            <span>📦 Quantity:</span>
+                            <strong id="trade-quantity-display">0.00</strong>
                         </div>
                         <div class="trade-sizing-row">
                             <span>📊 R:R Ratio:</span>

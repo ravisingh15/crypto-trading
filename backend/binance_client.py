@@ -4,7 +4,7 @@ import hashlib
 import requests
 from urllib.parse import urlencode
 from typing import List, Dict, Any, Optional
-from backend.config import API_KEY, SECRET_KEY, BINANCE_BASE_URL, BINANCE_DATA_URL
+from backend.config import API_KEY, SECRET_KEY, BINANCE_BASE_URL, BINANCE_DATA_URL, BINANCE_FUTURES_URL
 
 class BinanceClient:
     """
@@ -16,6 +16,7 @@ class BinanceClient:
         self.api_key = api_key
         self.secret_key = secret_key
         self.base_urls = [BINANCE_DATA_URL, BINANCE_BASE_URL]
+        self.futures_url = BINANCE_FUTURES_URL
         self.session = requests.Session()
         if self.api_key:
             self.session.headers.update({
@@ -41,19 +42,25 @@ class BinanceClient:
         last_error = None
         for base_url in self.base_urls:
             url = f"{base_url}{path}"
-            try:
-                response = self.session.request(method, url, params=params, timeout=10)
-                if response.status_code == 200:
-                    return response.json()
-                elif response.status_code == 429:
-                    # Rate limit exceeded - attempt fallback
-                    time.sleep(0.5)
-                    continue
-                else:
-                    response.raise_for_status()
-            except Exception as e:
-                last_error = e
-                continue
+            # Exponential backoff: up to 3 retries per base URL
+            for attempt in range(3):
+                try:
+                    response = self.session.request(method, url, params=params, timeout=10)
+                    if response.status_code == 200:
+                        return response.json()
+                    elif response.status_code == 429:
+                        # Rate limit — exponential backoff
+                        wait = 0.5 * (2 ** attempt)  # 0.5s, 1s, 2s
+                        time.sleep(wait)
+                        continue
+                    else:
+                        response.raise_for_status()
+                except Exception as e:
+                    last_error = e
+                    if attempt < 2:
+                        time.sleep(0.3 * (attempt + 1))
+                        continue
+                    break
                 
         if last_error:
             raise last_error
@@ -219,6 +226,168 @@ class BinanceClient:
         }
         return self._request("DELETE", "/api/v3/order", params=params, signed=True)
 
+    # ==========================================================================
+    # FUTURES API METHODS
+    # ==========================================================================
+
+    def _futures_request(self, method: str, path: str, params: Optional[Dict[str, Any]] = None,
+                         signed: bool = False) -> Any:
+        """Make a request to the Binance Futures API."""
+        params = params or {}
+
+        if signed:
+            if not self.secret_key or not self.api_key:
+                raise ValueError("API Key and Secret Key are required for signed Binance requests.")
+            params["timestamp"] = int(time.time() * 1000)
+            query_string = urlencode(params)
+            signature = hmac.new(
+                self.secret_key.encode("utf-8"),
+                query_string.encode("utf-8"),
+                hashlib.sha256
+            ).hexdigest()
+            params["signature"] = signature
+
+        url = f"{self.futures_url}{path}"
+        try:
+            response = self.session.request(method, url, params=params, timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                error_data = response.json() if response.text else {}
+                raise RuntimeError(f"Futures API error {response.status_code}: {error_data.get('msg', response.text)}")
+        except RuntimeError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"Futures API request failed: {str(e)}")
+
+    def futures_get_exchange_info(self, symbol: str) -> Dict[str, Any]:
+        """Fetch trading rules for a Futures symbol."""
+        data = self._futures_request("GET", "/fapi/v1/exchangeInfo")
+        if data and "symbols" in data:
+            for s in data["symbols"]:
+                if s.get("symbol") == symbol.upper():
+                    return s
+        raise ValueError(f"No futures exchange info found for {symbol}")
+
+    def futures_get_symbol_price(self, symbol: str) -> float:
+        """Fetch current mark price for a Futures symbol."""
+        data = self._futures_request("GET", "/fapi/v1/ticker/price",
+                                     params={"symbol": symbol.upper()})
+        return float(data.get("price", 0))
+
+    def futures_set_leverage(self, symbol: str, leverage: int) -> Dict[str, Any]:
+        """Set leverage for a Futures symbol."""
+        params = {
+            "symbol": symbol.upper(),
+            "leverage": leverage,
+        }
+        return self._futures_request("POST", "/fapi/v1/leverage", params=params, signed=True)
+
+    def futures_place_market_order(self, symbol: str, side: str, quantity: float) -> Dict[str, Any]:
+        """
+        Place a Futures MARKET order.
+        side: 'BUY' (open long / close short) or 'SELL' (open short / close long)
+        """
+        params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": "MARKET",
+            "quantity": quantity,
+        }
+        return self._futures_request("POST", "/fapi/v1/order", params=params, signed=True)
+
+    def futures_place_stop_market(self, symbol: str, side: str, quantity: float,
+                                  stop_price: float) -> Dict[str, Any]:
+        """
+        Place a STOP_MARKET order (used for Stop Loss on Futures).
+        For LONG SL: side='SELL', stopPrice = SL level.
+        For SHORT SL: side='BUY', stopPrice = SL level.
+        """
+        params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": "STOP_MARKET",
+            "stopPrice": stop_price,
+            "quantity": quantity,
+            "reduceOnly": "true",
+        }
+        return self._futures_request("POST", "/fapi/v1/order", params=params, signed=True)
+
+    def futures_place_take_profit_market(self, symbol: str, side: str, quantity: float,
+                                         stop_price: float) -> Dict[str, Any]:
+        """
+        Place a TAKE_PROFIT_MARKET order (used for TP on Futures).
+        For LONG TP: side='SELL', stopPrice = TP level.
+        For SHORT TP: side='BUY', stopPrice = TP level.
+        """
+        params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": "TAKE_PROFIT_MARKET",
+            "stopPrice": stop_price,
+            "quantity": quantity,
+            "reduceOnly": "true",
+        }
+        return self._futures_request("POST", "/fapi/v1/order", params=params, signed=True)
+
+    def futures_get_account(self) -> Dict[str, Any]:
+        """Fetch Futures account info including balances and positions."""
+        return self._futures_request("GET", "/fapi/v2/account", signed=True)
+
+    def futures_get_positions(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Fetch open Futures positions. Returns positions with non-zero quantity."""
+        data = self._futures_request("GET", "/fapi/v2/positionRisk", signed=True)
+        positions = [p for p in data if float(p.get("positionAmt", 0)) != 0]
+        if symbol:
+            positions = [p for p in positions if p.get("symbol") == symbol.upper()]
+        return positions
+
+    def futures_get_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Fetch open Futures orders."""
+        params = {}
+        if symbol:
+            params["symbol"] = symbol.upper()
+        return self._futures_request("GET", "/fapi/v1/openOrders", params=params, signed=True)
+
+    def futures_cancel_order(self, symbol: str, order_id: int) -> Dict[str, Any]:
+        """Cancel a Futures order."""
+        params = {
+            "symbol": symbol.upper(),
+            "orderId": order_id,
+        }
+        return self._futures_request("DELETE", "/fapi/v1/order", params=params, signed=True)
+
+    def futures_cancel_all_orders(self, symbol: str) -> Dict[str, Any]:
+        """Cancel all open Futures orders for a symbol."""
+        params = {"symbol": symbol.upper()}
+        return self._futures_request("DELETE", "/fapi/v1/allOpenOrders", params=params, signed=True)
+
+    def futures_get_order_status(self, symbol: str, order_id: int) -> Dict[str, Any]:
+        """
+        Query the status of a specific Futures order.
+        Returns order details including status (NEW, FILLED, CANCELED, etc.)
+        and avgPrice for filled orders.
+        """
+        params = {
+            "symbol": symbol.upper(),
+            "orderId": order_id,
+        }
+        return self._futures_request("GET", "/fapi/v1/order", params=params, signed=True)
+
+    def futures_get_user_trades(self, symbol: str, order_id: Optional[int] = None,
+                                 limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Query recent trades for a Futures symbol (user's fills).
+        Can filter by orderId to get fills for a specific order.
+        """
+        params = {
+            "symbol": symbol.upper(),
+            "limit": limit,
+        }
+        if order_id is not None:
+            params["orderId"] = order_id
+        return self._futures_request("GET", "/fapi/v1/userTrades", params=params, signed=True)
+
+
 # Global client instance
 binance_client = BinanceClient()
-

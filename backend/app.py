@@ -11,6 +11,8 @@ from backend.binance_client import binance_client
 from backend.indicators import enrich_klines_dataframe
 from backend.screener import screener_engine
 from backend.trade_signals import scan_all_signals
+from backend.auto_trader import auto_trader
+from backend.trade_journal import trade_journal
 
 app = FastAPI(
     title="Binance Crypto Screener & Analysis API",
@@ -226,9 +228,7 @@ def get_wallet():
 class OrderRequest(BaseModel):
     symbol: str
     side: str  # BUY or SELL
-    order_type: str = "MARKET"  # MARKET or LIMIT
-    quantity: float
-    price: Optional[float] = None  # Required for LIMIT
+    amount: float  # USDT amount to invest
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
 
@@ -236,15 +236,21 @@ class OrderRequest(BaseModel):
 @app.post("/api/order")
 def place_order(order: OrderRequest):
     """
-    Place an order with optional SL/TP.
-    For LONG trades: side=BUY for entry, then OCO SELL for SL+TP.
-    For SHORT exits: side=SELL for entry, then OCO BUY for SL+TP.
+    Place a market order with optional SL/TP.
+    User specifies USDT amount — quantity is computed from current price.
     """
     try:
         symbol = order.symbol.upper()
         side = order.side.upper()
 
-        # Step 1: Get exchange info for proper formatting
+        if order.amount <= 0:
+            raise ValueError("Amount must be greater than 0")
+
+        # Step 1: Get current price and exchange info
+        current_price = binance_client.get_symbol_price(symbol)
+        if current_price <= 0:
+            raise ValueError(f"Could not fetch price for {symbol}")
+
         try:
             info = binance_client.get_symbol_exchange_info(symbol)
             filters = {f["filterType"]: f for f in info.get("filters", [])}
@@ -257,38 +263,38 @@ def place_order(order: OrderRequest):
             price_filter = filters.get("PRICE_FILTER", {})
             tick_size = float(price_filter.get("tickSize", "0.01"))
 
+            min_notional = filters.get("MIN_NOTIONAL", filters.get("NOTIONAL", {}))
+            min_notional_val = float(min_notional.get("minNotional", "10"))
+
             # Format quantity to step size precision
             precision_qty = len(str(step_size).rstrip('0').split('.')[-1]) if '.' in str(step_size) else 0
             precision_price = len(str(tick_size).rstrip('0').split('.')[-1]) if '.' in str(tick_size) else 0
 
-            qty = round(order.quantity - (order.quantity % step_size), precision_qty)
+            # Compute quantity from USDT amount
+            raw_qty = order.amount / current_price
+            qty = round(raw_qty - (raw_qty % step_size), precision_qty)
+
             if qty < min_qty:
-                raise ValueError(f"Quantity {qty} is below minimum {min_qty}")
+                raise ValueError(f"Quantity {qty} is below minimum {min_qty} (try a larger amount)")
+            if order.amount < min_notional_val:
+                raise ValueError(f"Amount ${order.amount} is below minimum ${min_notional_val}")
         except ValueError:
             raise
         except Exception:
-            qty = order.quantity
+            qty = order.amount / current_price
             precision_price = 2
 
-        # Step 2: Place entry order
-        if order.order_type == "MARKET":
-            entry_result = binance_client.place_market_order(symbol, side, qty)
-        elif order.order_type == "LIMIT":
-            if not order.price:
-                raise ValueError("Price is required for LIMIT orders")
-            formatted_price = round(order.price - (order.price % tick_size), precision_price)
-            entry_result = binance_client.place_limit_order(symbol, side, qty, formatted_price)
-        else:
-            raise ValueError(f"Unsupported order type: {order.order_type}")
+        # Step 2: Place market entry order
+        entry_result = binance_client.place_market_order(symbol, side, qty)
 
         response = {
             "entry_order": entry_result,
             "sl_tp_order": None,
-            "message": f"Entry {order.order_type} {side} order placed successfully",
+            "message": f"MARKET {side} order placed — {qty} {symbol.replace('USDT', '')} (~${order.amount:.2f})",
         }
 
-        # Step 3: Place OCO for SL + TP if both provided (only for MARKET fills)
-        if order.stop_loss and order.take_profit and order.order_type == "MARKET":
+        # Step 3: Place OCO for SL + TP if both provided
+        if order.stop_loss and order.take_profit:
             exit_side = "SELL" if side == "BUY" else "BUY"
             sl = round(order.stop_loss - (order.stop_loss % tick_size), precision_price)
             tp = round(order.take_profit - (order.take_profit % tick_size), precision_price)
@@ -367,6 +373,77 @@ def np_isnan(val: Any) -> bool:
         return np.isnan(val)
     except Exception:
         return False
+
+
+# ================================================
+# Bot Auto-Trader Endpoints
+# ================================================
+
+class BotConfigUpdate(BaseModel):
+    paper_mode: Optional[bool] = None
+    market_type: Optional[str] = None  # "futures" or "spot"
+    amount_per_trade: Optional[float] = None
+    leverage: Optional[int] = None
+    min_confidence: Optional[int] = None
+    max_positions: Optional[int] = None
+    max_daily_loss: Optional[float] = None
+    cooldown_hours: Optional[int] = None
+    scan_interval_minutes: Optional[int] = None
+    candle_interval: Optional[str] = None
+
+
+@app.post("/api/bot/start")
+def bot_start():
+    """Start the auto-trading bot."""
+    try:
+        result = auto_trader.start()
+        return result
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/api/bot/stop")
+def bot_stop():
+    """Stop the auto-trading bot."""
+    try:
+        result = auto_trader.stop()
+        return result
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/bot/status")
+def bot_status():
+    """Get current bot status, config, open positions, and recent log."""
+    try:
+        return auto_trader.get_status()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/api/bot/config")
+def bot_config(config: BotConfigUpdate):
+    """Update bot configuration."""
+    try:
+        updates = {k: v for k, v in config.dict().items() if v is not None}
+        auto_trader.update_config(updates)
+        return {"message": "Config updated", "config": auto_trader.config}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/bot/journal")
+def bot_journal(
+    limit: int = Query(50, description="Number of entries to return"),
+    event_type: str = Query(None, description="Filter by event type"),
+):
+    """Get trade journal entries."""
+    try:
+        entries = trade_journal.get_recent(limit=limit, event_type=event_type)
+        return {"count": len(entries), "entries": entries}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 # Serve static frontend files if directory exists
 if FRONTEND_DIR.exists():

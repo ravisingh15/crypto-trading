@@ -20,6 +20,7 @@ DEBUG = os.getenv("DEBUG", "True").lower() == "true"
 # Binance REST endpoints with fallback
 BINANCE_BASE_URL = os.getenv("BINANCE_BASE_URL", "https://api.binance.com")
 BINANCE_DATA_URL = os.getenv("BINANCE_DATA_URL", "https://data-api.binance.vision")
+BINANCE_FUTURES_URL = os.getenv("BINANCE_FUTURES_URL", "https://fapi.binance.com")
 
 # Default pairs to track if scanning fails or for quick summary
 TOP_PAIRS = [

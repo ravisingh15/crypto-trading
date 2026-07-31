@@ -580,7 +580,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }).join('');
     }
 
-    // Update Tab Nav for Wallet
+    // Update Tab Nav for Wallet + Bot
+    const botPanel = document.getElementById('bot-panel');
     tabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             const tab = btn.dataset.tab;
@@ -589,13 +590,23 @@ document.addEventListener("DOMContentLoaded", () => {
                 screenerTableSection.style.display = 'none';
                 signalsPanel.style.display = 'none';
                 walletPanel.style.display = '';
+                botPanel.style.display = 'none';
                 if (!walletLoadedOnce) {
                     loadWallet();
                 }
+            } else if (tab === 'bot') {
+                screenerPanel.style.display = 'none';
+                screenerTableSection.style.display = 'none';
+                signalsPanel.style.display = 'none';
+                walletPanel.style.display = 'none';
+                botPanel.style.display = '';
+                loadBotStatus();
             } else if (tab === 'screener') {
                 walletPanel.style.display = 'none';
+                botPanel.style.display = 'none';
             } else if (tab === 'signals') {
                 walletPanel.style.display = 'none';
+                botPanel.style.display = 'none';
             }
         });
     });
@@ -616,11 +627,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const tradeTpPrice = document.getElementById('trade-tp-price');
     const tradeTpPct = document.getElementById('trade-tp-pct');
 
-    const tradeAccountSize = document.getElementById('trade-account-size');
-    const tradeRiskPct = document.getElementById('trade-risk-pct');
-    const tradeDollarRisk = document.getElementById('trade-dollar-risk');
-    const tradePositionSize = document.getElementById('trade-position-size');
-    const tradePositionValue = document.getElementById('trade-position-value');
+    const tradeAmountInput = document.getElementById('trade-amount');
+    const tradeQuantityDisplay = document.getElementById('trade-quantity-display');
     const tradeRrDisplay = document.getElementById('trade-rr-display');
 
     const tradeResult = document.getElementById('trade-result');
@@ -633,8 +641,7 @@ document.addEventListener("DOMContentLoaded", () => {
     btnCloseTradeModal.addEventListener('click', closeTradeModal);
     btnCancelTrade.addEventListener('click', closeTradeModal);
 
-    tradeAccountSize.addEventListener('input', recalculateTradeSizing);
-    tradeRiskPct.addEventListener('input', recalculateTradeSizing);
+    tradeAmountInput.addEventListener('input', recalculateTradeSizing);
 
     function openTradeModal(sigData) {
         activeTradeData = sigData;
@@ -668,22 +675,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function recalculateTradeSizing() {
         if (!activeTradeData) return;
 
-        const account = parseFloat(tradeAccountSize.value) || 1000;
-        const riskPct = parseFloat(tradeRiskPct.value) || 2;
+        const amount = parseFloat(tradeAmountInput.value) || 0;
+        const qty = activeTradeData.entry > 0 ? (amount / activeTradeData.entry) : 0;
 
-        const dollarRisk = account * (riskPct / 100);
-        const stopDistance = Math.abs(activeTradeData.entry - activeTradeData.sl);
-
-        let units = 0;
-        if (stopDistance > 0) {
-            units = dollarRisk / stopDistance;
-        }
-
-        const positionVal = units * activeTradeData.entry;
-
-        tradeDollarRisk.textContent = `$${dollarRisk.toFixed(2)}`;
-        tradePositionSize.textContent = `${units.toFixed(6)} ${activeTradeData.symbol.replace('USDT', '')}`;
-        tradePositionValue.textContent = `$${positionVal.toFixed(2)}`;
+        const baseName = activeTradeData.symbol.replace('USDT', '');
+        tradeQuantityDisplay.textContent = `${qty.toFixed(6)} ${baseName}`;
     }
 
     // 3-Second Hold to Execute Button Interaction
@@ -738,19 +734,21 @@ document.addEventListener("DOMContentLoaded", () => {
     async function executeLiveTrade() {
         if (!activeTradeData) return;
 
-        const account = parseFloat(tradeAccountSize.value) || 1000;
-        const riskPct = parseFloat(tradeRiskPct.value) || 2;
-        const dollarRisk = account * (riskPct / 100);
-        const stopDistance = Math.abs(activeTradeData.entry - activeTradeData.sl);
-        const qty = stopDistance > 0 ? (dollarRisk / stopDistance) : 0;
+        const amount = parseFloat(tradeAmountInput.value) || 0;
+        if (amount <= 0) {
+            tradeResult.style.display = 'block';
+            tradeResult.className = 'trade-result error';
+            tradeResultContent.innerHTML = `<strong>❌ Enter a valid amount</strong>`;
+            resetHoldButton();
+            return;
+        }
 
         const side = activeTradeData.direction === 'LONG' ? 'BUY' : 'SELL';
 
         const orderData = {
             symbol: activeTradeData.symbol,
             side: side,
-            order_type: 'MARKET',
-            quantity: qty,
+            amount: amount,
             stop_loss: activeTradeData.sl,
             take_profit: activeTradeData.tp,
         };
@@ -786,6 +784,246 @@ document.addEventListener("DOMContentLoaded", () => {
             walletLoadedOnce = false;
         }
     }
-});
 
+    // ================================================
+    // Bot Auto-Trader Panel Logic
+    // ================================================
+    const btnBotToggle = document.getElementById('btn-bot-toggle');
+    const botToggleLabel = document.getElementById('bot-toggle-label');
+    const botToggleSwitch = document.getElementById('bot-toggle-switch');
+    const botModeBadge = document.getElementById('bot-mode-badge');
+    const botSubtitle = document.getElementById('bot-subtitle');
+    const botStatusDot = document.getElementById('bot-status-dot');
+
+    // Stats
+    const botStatStatus = document.getElementById('bot-stat-status');
+    const botStatPositions = document.getElementById('bot-stat-positions');
+    const botStatPnl = document.getElementById('bot-stat-pnl');
+    const botStatTrades = document.getElementById('bot-stat-trades');
+
+    // Config fields
+    const botCfgAmount = document.getElementById('bot-cfg-amount');
+    const botCfgLeverage = document.getElementById('bot-cfg-leverage');
+    const botCfgConfidence = document.getElementById('bot-cfg-confidence');
+    const botCfgMaxPos = document.getElementById('bot-cfg-max-pos');
+    const botCfgMaxLoss = document.getElementById('bot-cfg-max-loss');
+    const botCfgInterval = document.getElementById('bot-cfg-interval');
+    const botCfgCooldown = document.getElementById('bot-cfg-cooldown');
+    const botCfgPaper = document.getElementById('bot-cfg-paper');
+    const botCfgMarket = document.getElementById('bot-cfg-market');
+    const btnSaveBotConfig = document.getElementById('btn-save-bot-config');
+
+    // Positions & Log
+    const botPositionsList = document.getElementById('bot-positions-list');
+    const botLogEntries = document.getElementById('bot-log-entries');
+    const botLogCount = document.getElementById('bot-log-count');
+
+    let botIsRunning = false;
+    let botPollTimer = null;
+
+    // Toggle bot ON/OFF
+    btnBotToggle.addEventListener('click', async () => {
+        btnBotToggle.disabled = true;
+        if (botIsRunning) {
+            await window.cryptoAPI.stopBot();
+        } else {
+            // Save config first, then start
+            await saveBotConfig();
+            await window.cryptoAPI.startBot();
+        }
+        setTimeout(() => {
+            loadBotStatus();
+            btnBotToggle.disabled = false;
+        }, 500);
+    });
+
+    // Save config
+    btnSaveBotConfig.addEventListener('click', async () => {
+        await saveBotConfig();
+        btnSaveBotConfig.textContent = '✅ Saved!';
+        setTimeout(() => { btnSaveBotConfig.textContent = '💾 Save Config'; }, 1500);
+    });
+
+    async function saveBotConfig() {
+        const config = {
+            paper_mode: botCfgPaper.checked,
+            market_type: botCfgMarket.value,
+            amount_per_trade: parseFloat(botCfgAmount.value) || 50,
+            leverage: parseInt(botCfgLeverage.value) || 5,
+            min_confidence: parseInt(botCfgConfidence.value) || 60,
+            max_positions: parseInt(botCfgMaxPos.value) || 3,
+            max_daily_loss: parseFloat(botCfgMaxLoss.value) || 50,
+            scan_interval_minutes: parseInt(botCfgInterval.value) || 60,
+            cooldown_hours: parseInt(botCfgCooldown.value) || 4,
+        };
+        await window.cryptoAPI.updateBotConfig(config);
+    }
+
+    async function loadBotStatus() {
+        const data = await window.cryptoAPI.getBotStatus();
+        if (data.error) return;
+
+        botIsRunning = data.running;
+        const config = data.config || {};
+        const stats = data.stats || {};
+
+        // Toggle button state
+        if (botIsRunning) {
+            btnBotToggle.classList.add('active');
+            botToggleLabel.textContent = 'Stop Bot';
+            botStatusDot.classList.add('active');
+            botStatStatus.textContent = '▶ Running';
+            botStatStatus.style.color = 'var(--green-bull)';
+            botSubtitle.textContent = `Running since ${stats.started_at || 'now'} · Last cycle: ${stats.last_cycle || 'pending'}`;
+        } else {
+            btnBotToggle.classList.remove('active');
+            botToggleLabel.textContent = 'Start Bot';
+            botStatusDot.classList.remove('active');
+            botStatStatus.textContent = '⏹ Stopped';
+            botStatStatus.style.color = 'var(--text-muted)';
+            botSubtitle.textContent = 'Configure and start the autonomous trading bot';
+        }
+
+        // Mode badge
+        const isPaper = config.paper_mode;
+        const isFutures = config.market_type === 'futures';
+        botModeBadge.textContent = isPaper ? 'PAPER MODE' : (isFutures ? 'LIVE FUTURES' : 'LIVE SPOT');
+        botModeBadge.className = `bot-mode-badge ${isPaper ? 'paper' : 'live'}`;
+
+        // Stats
+        const maxPos = config.max_positions || 3;
+        botStatPositions.textContent = `${data.position_count} / ${maxPos}`;
+        botStatPnl.textContent = `$${(data.daily_pnl || 0).toFixed(2)}`;
+        botStatPnl.style.color = data.daily_pnl >= 0 ? 'var(--green-bull)' : 'var(--red-bear)';
+        botStatTrades.textContent = stats.total_trades_executed || 0;
+
+        // Sync config fields
+        botCfgAmount.value = config.amount_per_trade || 50;
+        botCfgLeverage.value = config.leverage || 5;
+        botCfgConfidence.value = config.min_confidence || 60;
+        botCfgMaxPos.value = config.max_positions || 3;
+        botCfgMaxLoss.value = config.max_daily_loss || 50;
+        botCfgInterval.value = config.scan_interval_minutes || 60;
+        botCfgCooldown.value = config.cooldown_hours || 4;
+        botCfgPaper.checked = config.paper_mode !== false;
+        botCfgMarket.value = config.market_type || 'futures';
+
+        // Render positions
+        renderBotPositions(data.open_positions || []);
+
+        // Render log
+        renderBotLog(data.recent_log || []);
+
+        // Auto-poll if running
+        if (botPollTimer) clearInterval(botPollTimer);
+        if (botIsRunning) {
+            botPollTimer = setInterval(loadBotStatus, 10000);
+        }
+    }
+
+    function renderBotPositions(positions) {
+        if (positions.length === 0) {
+            botPositionsList.innerHTML = '<div class="bot-empty-state">No open positions</div>';
+            return;
+        }
+
+        const fmt = (p) => p >= 1000 ? p.toLocaleString(undefined, { maximumFractionDigits: 2 }) : p >= 1 ? p.toFixed(4) : p.toFixed(6);
+
+        botPositionsList.innerHTML = positions.map(pos => {
+            const isLong = pos.side === 'BUY';
+            const dirClass = isLong ? 'long' : 'short';
+            const dirLabel = isLong ? '▲ LONG' : '▼ SHORT';
+            const pnl = pos.unrealized_pnl || 0;
+            const pnlClass = pnl >= 0 ? 'profit' : 'loss';
+            const paperTag = pos.paper ? '<span class="paper-tag">PAPER</span>' : '';
+
+            return `
+                <div class="bot-position-card ${dirClass}">
+                    <div class="bot-pos-header">
+                        <span class="bot-pos-symbol">${pos.symbol.replace('USDT', '')} ${paperTag}</span>
+                        <span class="direction-badge ${dirClass}">${dirLabel}</span>
+                    </div>
+                    <div class="bot-pos-details">
+                        <span>Entry: $${fmt(pos.entry_price)}</span>
+                        <span>Qty: ${pos.quantity.toFixed(4)}</span>
+                        <span class="bot-pos-pnl ${pnlClass}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</span>
+                    </div>
+                    <div class="bot-pos-levels">
+                        <span class="sl-label">SL: $${fmt(pos.stop_loss)}</span>
+                        <span class="tp-label">TP: $${fmt(pos.take_profit)}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderBotLog(entries) {
+        if (entries.length === 0) {
+            botLogEntries.innerHTML = '<div class="bot-empty-state">No activity yet. Start the bot to begin scanning.</div>';
+            botLogCount.textContent = '0 entries';
+            return;
+        }
+
+        botLogCount.textContent = `${entries.length} entries`;
+
+        const typeIcons = {
+            'SIGNAL': '🎯',
+            'EXECUTE': '⚡',
+            'OCO_PLACED': '🛡️',
+            'CLOSED': '✅',
+            'FILTERED': '🔽',
+            'RISK_BLOCKED': '🚫',
+            'CYCLE': '🔄',
+            'BOT': '🤖',
+        };
+
+        const typeColors = {
+            'SIGNAL': 'var(--accent-cyan)',
+            'EXECUTE': 'var(--green-bull)',
+            'OCO_PLACED': 'var(--amber-warning)',
+            'CLOSED': 'var(--green-bull)',
+            'FILTERED': 'var(--text-muted)',
+            'RISK_BLOCKED': 'var(--red-bear)',
+            'CYCLE': 'var(--text-secondary)',
+            'BOT': 'var(--accent-purple)',
+        };
+
+        botLogEntries.innerHTML = entries.map(entry => {
+            const icon = typeIcons[entry.type] || '📋';
+            const color = typeColors[entry.type] || 'var(--text-secondary)';
+            const time = entry.timestamp ? entry.timestamp.split(' ')[1] : '';
+
+            let detail = '';
+            if (entry.type === 'SIGNAL') {
+                detail = `${entry.symbol} ${entry.direction} · ${entry.strategy} · conf=${entry.confidence}`;
+            } else if (entry.type === 'EXECUTE') {
+                const tag = entry.paper_trade ? ' [PAPER]' : '';
+                detail = `${entry.side} ${entry.symbol} · $${entry.amount_usdt} · qty=${entry.quantity}${tag}`;
+            } else if (entry.type === 'CLOSED') {
+                const pnlSign = entry.pnl_usdt >= 0 ? '+' : '';
+                detail = `${entry.symbol} ${entry.exit_type} · P&L: ${pnlSign}$${(entry.pnl_usdt || 0).toFixed(2)}`;
+            } else if (entry.type === 'FILTERED') {
+                detail = `${entry.symbol} · ${entry.reason}`;
+            } else if (entry.type === 'RISK_BLOCKED') {
+                detail = `${entry.symbol} · ${entry.reason}`;
+            } else if (entry.type === 'CYCLE') {
+                detail = `Found: ${entry.signals_found} · Executed: ${entry.executed} · Filtered: ${entry.filtered} · Blocked: ${entry.risk_blocked}`;
+            } else if (entry.type === 'BOT') {
+                detail = `${entry.action} ${entry.details || ''}`;
+            } else {
+                detail = JSON.stringify(entry).substring(0, 80);
+            }
+
+            return `
+                <div class="bot-log-entry">
+                    <span class="bot-log-time">${time}</span>
+                    <span class="bot-log-icon">${icon}</span>
+                    <span class="bot-log-type" style="color:${color}">${entry.type}</span>
+                    <span class="bot-log-detail">${detail}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+});
 
