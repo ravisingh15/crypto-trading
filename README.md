@@ -55,6 +55,7 @@
    - `04_strategy_backtest_comparison.ipynb`: 20-strategy comparison with win rate, Sharpe ratio, equity curves, and composite ranking.
    - `05_multi_timeframe_analysis.ipynb`: Multi-timeframe (5m/15m/1h/4h) 20-strategy comparison plus Crypto vs Gold (XAUTUSDT, PAXGUSDT) analysis.
    - `06_atr_risk_management_backtest.ipynb`: Bar-by-bar ATR Stop-Loss & Take-Profit simulator testing 1:1.5, 1:2.0, and 1:3.0 Risk-to-Reward ratios and account equity growth ($1,000 capital, 2% risk/trade).
+   - `07_profitable_strategies_backtest.ipynb`: 6-month regime-aware institutional backtest across bull/bear/range markets with 0.21% friction.
 
 ---
 
@@ -67,6 +68,8 @@ crypto-analysis/
 ├── .gitignore                         # Standard exclusion rules
 ├── README.md                          # Documentation & project guide
 ├── requirements.txt                   # Dependencies (FastAPI, Pandas, Jupyter, Plotly)
+├── run_backtest.py                    # 6-Month multi-pair institutional backtesting CLI
+├── start.bat                          # 1-Click launcher script
 ├── assets/
 │   └── screenshots/                   # UI documentation screenshots
 ├── notebooks/                         # Jupyter Notebooks for analysis
@@ -75,7 +78,8 @@ crypto-analysis/
 │   ├── 03_screener_backtest.ipynb
 │   ├── 04_strategy_backtest_comparison.ipynb
 │   ├── 05_multi_timeframe_analysis.ipynb
-│   └── 06_atr_risk_management_backtest.ipynb
+│   ├── 06_atr_risk_management_backtest.ipynb
+│   └── 07_profitable_strategies_backtest.ipynb
 ├── backend/
 │   ├── config.py                      # Environment configuration loader
 │   ├── binance_client.py              # REST API client with failover endpoints
@@ -147,8 +151,40 @@ Navigate to the `notebooks/` directory and open any of the notebooks:
 - **`04_strategy_backtest_comparison.ipynb`**: Full 20-strategy backtest comparison with performance metrics, heatmaps, and equity curves.
 - **`05_multi_timeframe_analysis.ipynb`**: Multi-timeframe (5m/15m/1h/4h) analysis and Crypto vs Gold comparison.
 - **`06_atr_risk_management_backtest.ipynb`**: Dynamic ATR Stop-Loss / Take-Profit backtester with account equity growth simulation.
+- **`07_profitable_strategies_backtest.ipynb`**: 6-month regime-aware institutional backtest evaluating multi-factor confluence across 8 crypto pairs.
 
 ---
+
+## 📊 Backtest Engine & Empirical Strategy Performance
+
+The platform includes a CLI backtest runner ([`run_backtest.py`](file:///C:/Users/rvsdc/crypto-analysis/run_backtest.py)) and institutional simulation engine ([`backend/backtester.py`](file:///C:/Users/rvsdc/crypto-analysis/backend/backtester.py)) testing 20 confluence strategies over **6 months of hourly candles** across 8 high-volume pairs (`BTCUSDT`, `ETHUSDT`, `SOLUSDT`, `BNBUSDT`, `XRPUSDT`, `AVAXUSDT`, `NEARUSDT`, `DOGEUSDT`).
+
+### Realistic Institutional Constraints
+* **Friction & Fees**: 0.075% Binance taker fee + 0.03% slippage per side (**0.21% roundtrip friction**).
+* **Dynamic ATR Risk Controls**: Stop Loss set to `2.0x ATR` (noise-immune breathing room), Take Profit set to `3.5x ATR` (1:1.75 true reward-to-risk ratio).
+* **Position Mutex**: Non-overlapping entries matching live bot execution.
+
+### Benchmark Results (Sorted by Profit Factor)
+
+| Strategy | Direction | Trades | Win Rate (%) | Avg Trade (%) | Net Profit Factor | Portfolio Return (%) | Max Drawdown (%) | Alpha Tier |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Breakout Retest** | LONG | 351 | 42.7% | +0.18% | **1.18** | +5.1% | -29.3% | Tier B+ |
+| **Trend Pullback** | LONG | 117 | 41.9% | +0.17% | **1.16** | -2.1% | -22.9% | Tier A+ |
+| **RSI Divergence** | LONG | 134 | 46.3% | +0.15% | **1.14** | +7.6% | **-19.7%** | Tier A+ |
+| **Squeeze Breakout** | LONG | 319 | 40.1% | +0.07% | **1.07** | -9.4% | -32.8% | Tier A |
+| **Mean Reversion** | LONG | 234 | 46.6% | +0.05% | **1.05** | +4.8% | -29.9% | Tier A+ |
+| **Taker Pressure** | LONG | 341 | 48.4% | +0.04% | **1.04** | **+44.5%** | -29.2% | Tier B |
+| **Supertrend Regime** | LONG | 317 | 41.6% | +0.02% | **1.02** | -13.0% | -39.8% | Tier A |
+| EMA Golden Cross | LONG | 366 | 37.4% | -0.01% | 0.99 | -36.1% | -56.5% | Tier C |
+| Volume Breakout | LONG | 226 | 37.6% | -0.05% | 0.95 | -26.1% | -40.6% | Tier B |
+| VWAP Reversion | LONG | 843 | 41.2% | -0.05% | 0.95 | -41.5% | -75.4% | Tier C |
+| Breakout Retest | SHORT | 226 | 33.2% | -0.16% | 0.87 | -36.1% | -47.2% | Tier B |
+| Momentum Cont. | SHORT | 275 | 30.9% | -0.42% | 0.67 | -50.7% | -52.2% | Tier C |
+
+### Run the Backtest Locally
+```bash
+python run_backtest.py
+```
 
 ## Security Best Practices
 
