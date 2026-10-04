@@ -16,6 +16,17 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
+from backend.config import (
+    DEFAULT_TOTAL_CAPITAL,
+    DEFAULT_SIZING_MODE,
+    DEFAULT_AMOUNT_PER_TRADE,
+    DEFAULT_TRADE_SIZE_PCT,
+    DEFAULT_RISK_PER_TRADE_PCT,
+    DEFAULT_DAILY_PROFIT_TARGET,
+    DEFAULT_TRAILING_STOP_ENABLED,
+    DEFAULT_TRAILING_STOP_CALLBACK_PCT,
+    DEFAULT_STRATEGY_FILTER,
+)
 from backend.binance_client import binance_client
 from backend.trade_signals import scan_all_signals
 from backend.trade_journal import trade_journal
@@ -49,10 +60,11 @@ class AutoTrader:
 
     Flow per cycle:
     1. Scan all symbols for signals
-    2. Filter: confidence >= threshold, bars_ago == 0 (fresh)
-    3. Risk check: max positions, daily loss, cooldowns, exposure limits
-    4. Execute: place Futures/Spot market order + SL/TP
-    5. Log everything with strategy attribution
+    2. Filter: confidence >= threshold, bars_ago == 0 (fresh), strategy whitelist
+    3. Sizing: Fixed USDT, % of Capital, or ATR Risk-based sizing
+    4. Risk check: max positions, daily loss, profit target, exposure limits
+    5. Execute: place Futures/Spot market order + SL/TP
+    6. Monitor: Trailing SL ratcheting & order tracking
     """
 
     def __init__(self):
@@ -66,7 +78,16 @@ class AutoTrader:
             "enabled": False,
             "paper_mode": True,
             "market_type": "futures",      # "futures" or "spot"
-            "amount_per_trade": 50,        # USDT per trade
+            "asset_filter": "all",         # "all", "crypto", "stocks"
+            "total_capital": DEFAULT_TOTAL_CAPITAL,        # Total allocated capital in USDT
+            "sizing_mode": DEFAULT_SIZING_MODE,            # "fixed", "percent_capital", "risk_pct"
+            "amount_per_trade": DEFAULT_AMOUNT_PER_TRADE,  # Fixed USDT per trade
+            "trade_size_pct": DEFAULT_TRADE_SIZE_PCT,      # % of total capital per trade
+            "risk_per_trade_pct": DEFAULT_RISK_PER_TRADE_PCT,  # % of total capital risked based on SL
+            "daily_profit_target": DEFAULT_DAILY_PROFIT_TARGET,  # Auto-pause when daily PnL hits this
+            "trailing_stop_enabled": DEFAULT_TRAILING_STOP_ENABLED,  # Dynamic trailing SL
+            "trailing_stop_callback_pct": DEFAULT_TRAILING_STOP_CALLBACK_PCT,  # % trailing offset
+            "strategy_filter": DEFAULT_STRATEGY_FILTER,    # "ALL" or specific strategy name
             "leverage": 5,                 # Futures leverage (1-125)
             "min_confidence": 60,          # Minimum signal confidence (0-100)
             "max_positions": 3,            # Max concurrent open positions
@@ -76,6 +97,9 @@ class AutoTrader:
             "candle_interval": "1h",       # Candle timeframe for signal scanning
             "max_total_exposure": 500,     # Max total notional exposure in USDT
             "max_sector_positions": 2,     # Max positions in same sector
+            "mtf_filter_enabled": True,    # Filter out counter-trend trades against 4h bias
+            "breakeven_stop_enabled": True, # Automatically ratchet SL to entry at profit threshold
+            "breakeven_r_mult": 1.8,       # Ratchet SL to entry when profit hits +1.8R (noise-immune)
         }
 
         # Runtime stats
@@ -96,6 +120,19 @@ class AutoTrader:
     def is_running(self) -> bool:
         return self._running
 
+    def _sync_risk_manager(self):
+        """Sync internal risk manager config with bot config."""
+        self._risk_manager.update_config({
+            "max_positions": self._config["max_positions"],
+            "max_daily_loss": self._config["max_daily_loss"],
+            "daily_profit_target": self._config.get("daily_profit_target", 0),
+            "total_capital": self._config.get("total_capital", 1000),
+            "cooldown_hours": self._config["cooldown_hours"],
+            "max_total_exposure": self._config["max_total_exposure"],
+            "max_sector_positions": self._config["max_sector_positions"],
+            "strategy_filter": self._config.get("strategy_filter", "ALL"),
+        })
+
     def update_config(self, new_config: Dict[str, Any]):
         """Update bot configuration. Can be called while running."""
         with self._lock:
@@ -108,19 +145,14 @@ class AutoTrader:
                                 self._config[key] = value.lower() in ("true", "1", "yes")
                             else:
                                 self._config[key] = bool(value)
+                        elif expected_type is float or isinstance(self._config[key], (int, float)):
+                            self._config[key] = float(value)
                         else:
                             self._config[key] = expected_type(value)
                     except (ValueError, TypeError):
                         pass
 
-            # Sync risk manager config
-            self._risk_manager.update_config({
-                "max_positions": self._config["max_positions"],
-                "max_daily_loss": self._config["max_daily_loss"],
-                "cooldown_hours": self._config["cooldown_hours"],
-                "max_total_exposure": self._config["max_total_exposure"],
-                "max_sector_positions": self._config["max_sector_positions"],
-            })
+            self._sync_risk_manager()
 
     def start(self) -> Dict[str, Any]:
         """Start the auto-trading loop."""
@@ -131,14 +163,7 @@ class AutoTrader:
         self._config["enabled"] = True
         self._stats["started_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-        # Sync risk manager
-        self._risk_manager.update_config({
-            "max_positions": self._config["max_positions"],
-            "max_daily_loss": self._config["max_daily_loss"],
-            "cooldown_hours": self._config["cooldown_hours"],
-            "max_total_exposure": self._config["max_total_exposure"],
-            "max_sector_positions": self._config["max_sector_positions"],
-        })
+        self._sync_risk_manager()
 
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
@@ -165,10 +190,93 @@ class AutoTrader:
 
         return {"status": "stopped", "stats": dict(self._stats)}
 
+    def square_off_position(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Square off a specific position immediately."""
+        closed = position_tracker.square_off_position(symbol, reason="MANUAL_SQUARE_OFF")
+        if closed:
+            trade_journal.log_position_closed(
+                symbol=closed["symbol"],
+                exit_type="MANUAL_SQUARE_OFF",
+                pnl=closed.get("pnl", 0),
+                paper=closed.get("paper", True),
+                strategy=closed.get("strategy", ""),
+            )
+            trade_journal.log_bot_event("SQUARE_OFF", f"Squared off {closed['symbol']} P&L: ${closed.get('pnl', 0):.2f}")
+        return closed
+
+    def square_off_all(self) -> Dict[str, Any]:
+        """Square off all open positions immediately."""
+        closed_list = position_tracker.square_off_all(reason="SQUARE_OFF_ALL")
+        total_pnl = sum(p.get("pnl", 0) for p in closed_list)
+        for closed in closed_list:
+            trade_journal.log_position_closed(
+                symbol=closed["symbol"],
+                exit_type="SQUARE_OFF_ALL",
+                pnl=closed.get("pnl", 0),
+                paper=closed.get("paper", True),
+                strategy=closed.get("strategy", ""),
+            )
+        trade_journal.log_bot_event("SQUARE_OFF_ALL", f"Squared off all {len(closed_list)} positions. Total P&L: ${total_pnl:.2f}")
+        return {
+            "status": "squared_off_all",
+            "count": len(closed_list),
+            "total_pnl": round(total_pnl, 2),
+            "closed_positions": closed_list,
+        }
+
+    def emergency_stop(self) -> Dict[str, Any]:
+        """Emergency stop: Stop bot thread and square off all positions immediately."""
+        stop_res = self.stop()
+        sq_res = self.square_off_all()
+        trade_journal.log_bot_event("EMERGENCY_STOP", "Panic stop triggered: Bot stopped & all positions liquidated")
+        return {
+            "status": "emergency_stopped",
+            "bot_status": stop_res,
+            "square_off_result": sq_res,
+        }
+
+    def run_manual_scan(self) -> Dict[str, Any]:
+        """Trigger an immediate scan-filter-execute cycle on demand."""
+        trade_journal.log_bot_event("MANUAL_SCAN", "Manual scan cycle triggered by user")
+        self._execute_cycle()
+        return {
+            "status": "scan_completed",
+            "last_cycle": self._stats["last_cycle"],
+            "positions_count": position_tracker.count(),
+        }
+
+    def _calculate_trade_amount(self, signal: Dict[str, Any]) -> float:
+        """Calculate USDT trade amount based on sizing_mode and risk rules."""
+        mode = self._config.get("sizing_mode", "fixed")
+        total_cap = float(self._config.get("total_capital", 1000))
+
+        if mode == "percent_capital":
+            pct = float(self._config.get("trade_size_pct", 5.0))
+            return max(10.0, round(total_cap * (pct / 100.0), 2))
+
+        elif mode == "risk_pct":
+            risk_pct = float(self._config.get("risk_per_trade_pct", 2.0))
+            risk_dollars = total_cap * (risk_pct / 100.0)
+            entry = float(signal.get("entry_price", 0))
+            sl = float(signal.get("stop_loss", 0))
+            if entry > 0 and sl > 0 and abs(entry - sl) > 0:
+                sl_dist_pct = abs(entry - sl) / entry
+                # Position size = Risk $ / SL distance %
+                calculated_size = risk_dollars / max(0.005, sl_dist_pct)
+                return max(10.0, min(total_cap, round(calculated_size, 2)))
+            return float(self._config.get("amount_per_trade", 50.0))
+
+        # Default "fixed" mode
+        return float(self._config.get("amount_per_trade", 50.0))
+
     def get_status(self) -> Dict[str, Any]:
-        """Get current bot status."""
+        """Get current bot status including capital metrics."""
         open_positions = position_tracker.to_dict_list()
         daily_pnl = trade_journal.get_daily_pnl()
+        total_cap = float(self._config.get("total_capital", 1000))
+        deployed_cap = sum(p.get("amount_usdt", 0) for p in open_positions)
+        free_cap = max(0.0, total_cap - deployed_cap)
+        utilization_pct = round((deployed_cap / total_cap * 100), 1) if total_cap > 0 else 0.0
 
         return {
             "running": self._running,
@@ -177,8 +285,13 @@ class AutoTrader:
             "open_positions": open_positions,
             "position_count": len(open_positions),
             "daily_pnl": round(daily_pnl, 2),
-            "recent_log": trade_journal.get_recent(limit=20),
+            "total_capital": total_cap,
+            "deployed_capital": round(deployed_cap, 2),
+            "free_capital": round(free_cap, 2),
+            "capital_utilization_pct": utilization_pct,
+            "recent_log": trade_journal.get_recent(limit=30),
         }
+
 
     def _run_loop(self):
         """Main bot loop — runs in a background thread."""
@@ -219,11 +332,14 @@ class AutoTrader:
             self._check_closures()
 
             # Step 2: Scan for signals
+            asset_class_filter = self._config.get("asset_filter", "all").upper()
             signals = scan_all_signals(
                 interval=interval,
                 lookback_bars=1,
                 min_confidence=min_conf,
+                asset_class=asset_class_filter,
             )
+
 
             self._stats["total_signals_seen"] += len(signals)
 
@@ -242,6 +358,14 @@ class AutoTrader:
                     signals_filtered += 1
                     continue
 
+                # MTF Trend Filter check
+                if self._config.get("mtf_filter_enabled", True) and not sig.get("htf_aligned", True):
+                    bias = sig.get("htf_bias", "NEUTRAL")
+                    tf = sig.get("htf_interval", "4h")
+                    trade_journal.log_signal_filtered(sig["symbol"], f"Counter-trend vs {tf} {bias} trend")
+                    signals_filtered += 1
+                    continue
+
                 trade_journal.log_signal_seen(
                     symbol=sig["symbol"],
                     direction=sig["direction"],
@@ -251,11 +375,19 @@ class AutoTrader:
                 )
                 candidate_signals.append(sig)
 
-            # Step 4: Execute candidate signals with per-trade risk checking
+            # Step 4: Execute candidate signals with per-trade dynamic sizing and risk checking
             signals_executed = 0
             signals_risk_blocked = 0
 
             for sig in candidate_signals:
+                # Calculate trade amount based on sizing mode
+                amount = self._calculate_trade_amount(sig)
+
+                # Check consecutive losses — throttle size after 3+ consecutive SLs
+                consec_losses = trade_journal.get_consecutive_losses()
+                if consec_losses >= 3:
+                    amount = max(10.0, amount * 0.5)
+
                 open_positions = position_tracker.get_open_positions()
                 today_execs = trade_journal.get_today_executions()
                 daily_pnl = trade_journal.get_daily_pnl()
@@ -267,6 +399,7 @@ class AutoTrader:
                     today_executions=today_execs,
                     daily_pnl=daily_pnl,
                     leverage=leverage,
+                    strategy=sig.get("strategy", ""),
                 )
 
                 if not can_trade:
@@ -501,7 +634,25 @@ class AutoTrader:
         return True
 
     def _check_closures(self):
-        """Check if any positions have been closed (SL/TP hit)."""
+        """Check if any positions have been closed (SL/TP hit or Trailing SL)."""
+        # Active Trailing Stop Loss & Breakeven update
+        if self._config.get("trailing_stop_enabled") or self._config.get("breakeven_stop_enabled", True):
+            callback_pct = float(self._config.get("trailing_stop_callback_pct", 1.5))
+            be_enabled = bool(self._config.get("breakeven_stop_enabled", True))
+            be_r_mult = float(self._config.get("breakeven_r_mult", 1.8))
+            updated_stops = position_tracker.update_trailing_stops(
+                callback_pct, breakeven_enabled=be_enabled, breakeven_r_mult=be_r_mult
+            )
+            for upd in updated_stops:
+                is_be = upd.get("type") == "BREAKEVEN"
+                evt_type = "BREAKEVEN_SL" if is_be else "TRAILING_SL"
+                msg = (
+                    f"Ratcheted SL to breakeven for {upd['symbol']} at ${upd['new_sl']}"
+                    if is_be
+                    else f"Ratcheted trailing SL for {upd['symbol']} to ${upd['new_sl']} (high/low: ${upd.get('highest') or upd.get('lowest', 0):.4f})"
+                )
+                trade_journal.log_bot_event(evt_type, msg)
+
         paper_closed = position_tracker.check_paper_closures()
         for pos in paper_closed:
             trade_journal.log_position_closed(

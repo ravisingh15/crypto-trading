@@ -13,6 +13,9 @@ from backend.screener import screener_engine
 from backend.trade_signals import scan_all_signals
 from backend.auto_trader import auto_trader
 from backend.trade_journal import trade_journal
+from backend.macro_regime import get_macro_summary, calculate_market_breadth
+from backend.high_delta_scanner import scan_futures_high_delta
+
 
 app = FastAPI(
     title="Binance Crypto Screener & Analysis API",
@@ -36,41 +39,106 @@ def health_check():
     return {"status": "ok", "service": "Binance Crypto Screener API"}
 
 @app.get("/api/market-summary")
-def get_market_summary():
-    """Returns top volume pairs and 24h market stats."""
+def get_market_summary(asset_class: str = Query("ALL", description="Filter by asset class: ALL, CRYPTO, STOCKS")):
+    """Returns top volume pairs and 24h market stats for Crypto & US Stocks."""
     try:
-        usdt_tickers = binance_client.get_usdt_tickers()
-        sorted_by_vol = sorted(usdt_tickers, key=lambda t: float(t.get("quoteVolume", 0)), reverse=True)[:10]
-        sorted_by_gain = sorted(usdt_tickers, key=lambda t: float(t.get("priceChangePercent", 0)), reverse=True)[:5]
-        sorted_by_loss = sorted(usdt_tickers, key=lambda t: float(t.get("priceChangePercent", 0)))[:5]
+        all_tickers = binance_client.get_usdt_tickers(asset_class="ALL")
+        filtered_tickers = binance_client.get_usdt_tickers(asset_class=asset_class)
 
-        total_usdt_volume = sum(float(t.get("quoteVolume", 0)) for t in usdt_tickers)
-        btc_ticker = next((t for t in usdt_tickers if t["symbol"] == "BTCUSDT"), None)
-        eth_ticker = next((t for t in usdt_tickers if t["symbol"] == "ETHUSDT"), None)
+        sorted_by_vol = sorted(filtered_tickers, key=lambda t: float(t.get("quoteVolume", 0)), reverse=True)[:10]
+        sorted_by_gain = sorted(filtered_tickers, key=lambda t: float(t.get("priceChangePercent", 0)), reverse=True)[:5]
+        sorted_by_loss = sorted(filtered_tickers, key=lambda t: float(t.get("priceChangePercent", 0)))[:5]
+
+        # Stock specific highlights
+        stock_tickers = [t for t in all_tickers if t.get("asset_class") == "STOCK"]
+        crypto_tickers = [t for t in all_tickers if t.get("asset_class") != "STOCK"]
+
+        top_stocks_gainers = sorted(stock_tickers, key=lambda t: float(t.get("priceChangePercent", 0)), reverse=True)[:5]
+        top_crypto_gainers = sorted(crypto_tickers, key=lambda t: float(t.get("priceChangePercent", 0)), reverse=True)[:5]
+
+        total_usdt_volume = sum(float(t.get("quoteVolume", 0)) for t in filtered_tickers)
+        btc_ticker = next((t for t in all_tickers if t["symbol"] == "BTCUSDT"), None)
+        eth_ticker = next((t for t in all_tickers if t["symbol"] == "ETHUSDT"), None)
+        tsla_ticker = next((t for t in all_tickers if t["symbol"] == "TSLABUSDT"), None)
+        nvda_ticker = next((t for t in all_tickers if t["symbol"] == "NVDABUSDT"), None)
+        aapl_ticker = next((t for t in all_tickers if t["symbol"] == "AAPLBUSDT"), None)
+        mstr_ticker = next((t for t in all_tickers if t["symbol"] == "MSTRBUSDT"), None)
+        spy_ticker = next((t for t in all_tickers if t["symbol"] == "SPYBUSDT"), None)
 
         return {
             "btc": btc_ticker,
             "eth": eth_ticker,
-            "total_pairs_tracked": len(usdt_tickers),
+            "tsla": tsla_ticker,
+            "nvda": nvda_ticker,
+            "aapl": aapl_ticker,
+            "mstr": mstr_ticker,
+            "spy": spy_ticker,
+            "total_pairs_tracked": len(filtered_tickers),
+            "crypto_pairs_count": len(crypto_tickers),
+            "stock_pairs_count": len(stock_tickers),
             "total_24h_usdt_volume": round(total_usdt_volume, 2),
             "top_volume": sorted_by_vol,
             "top_gainers": sorted_by_gain,
             "top_losers": sorted_by_loss,
+            "top_stock_gainers": top_stocks_gainers,
+            "top_crypto_gainers": top_crypto_gainers,
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/stocks/summary")
+def get_stocks_summary():
+    """Dedicated endpoint for US Stock (bStock) leaders, sectors, and top movers."""
+    try:
+        stock_tickers = binance_client.get_stock_tickers()
+        sorted_by_gain = sorted(stock_tickers, key=lambda t: float(t.get("priceChangePercent", 0)), reverse=True)
+        sorted_by_vol = sorted(stock_tickers, key=lambda t: float(t.get("quoteVolume", 0)), reverse=True)
+
+        mag7_symbols = ["AAPLBUSDT", "MSFTBUSDT", "NVDABUSDT", "TSLABUSDT", "AMZNBUSDT", "GOOGLBUSDT", "METABUSDT"]
+        mag7_tickers = [t for t in stock_tickers if t["symbol"] in mag7_symbols]
+
+        crypto_equities = ["MSTRBUSDT", "COINBUSDT", "HOODBUSDT", "IRENBUSDT"]
+        crypto_eq_tickers = [t for t in stock_tickers if t["symbol"] in crypto_equities]
+
+        etfs = ["SPYBUSDT", "QQQBUSDT", "TQQQBUSDT", "SMHBUSDT", "SOXLBUSDT"]
+        etf_tickers = [t for t in stock_tickers if t["symbol"] in etfs]
+
+        return {
+            "total_stocks": len(stock_tickers),
+            "magnificent_7": mag7_tickers,
+            "crypto_equities": crypto_eq_tickers,
+            "etfs": etf_tickers,
+            "top_gainers": sorted_by_gain[:5],
+            "top_volume": sorted_by_vol[:5],
+            "all_stocks": stock_tickers
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/macro/summary")
+def get_macro_regimes():
+    """Retrieve macro trend regimes for Crypto (BTC) and US Equities (SPY/QQQ)."""
+    try:
+        return get_macro_summary()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/screener")
 def run_screener(
     interval: str = Query("1h", description="Candle timeframe: 15m, 1h, 4h, 1d"),
-    category: str = Query("ALL", description="Filter by category: ALL, Layer 1, AI, DeFi, Meme"),
+    category: str = Query("ALL", description="Filter by category/sector"),
+    asset_class: str = Query("ALL", description="Filter by asset class: ALL, CRYPTO, STOCKS"),
     min_volume: float = Query(0, description="Minimum 24h quote volume in USDT")
 ):
-    """Run real-time technical analysis screener on top Binance USDT pairs."""
+    """Run real-time technical analysis screener on Binance pairs (Crypto & US Stocks) with Macro Confluence."""
     try:
-        results = screener_engine.run_screener(interval=interval, max_pairs=60)
+        results = screener_engine.run_screener(interval=interval, max_pairs=80, asset_class=asset_class)
         
-        # Filtering
+        # Calculate Market Breadth across full scan before category filtering
+        breadth = calculate_market_breadth(results)
+        macro_summary = get_macro_summary()
+
+        # Filtering by Category/Sector
         if category and category != "ALL":
             results = [r for r in results if r["category"].upper() == category.upper()]
             
@@ -79,11 +147,15 @@ def run_screener(
 
         return {
             "timestamp": int(os.times().elapsed if hasattr(os, 'times') else 0),
+            "asset_class": asset_class,
             "total_results": len(results),
+            "market_breadth": breadth,
+            "macro_summary": macro_summary,
             "data": results
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/klines/{symbol}")
 def get_symbol_klines(
@@ -91,12 +163,16 @@ def get_symbol_klines(
     interval: str = Query("1h", description="Timeframe"),
     limit: int = Query(100, ge=10, le=500)
 ):
-    """Fetch raw klines and computed indicators (RSI, MACD, EMA, BB, RVOL) for charting."""
+    """Fetch raw klines and computed indicators for charting (supports TSLA, AAPL, BTCUSDT, etc.)."""
     try:
-        raw_klines = binance_client.get_klines(symbol.upper(), interval=interval, limit=limit)
+        resolved = binance_client.resolve_symbol(symbol)
+        raw_klines = binance_client.get_klines(resolved, interval=interval, limit=limit)
         df = enrich_klines_dataframe(raw_klines)
         if df.empty:
-            raise HTTPException(status_code=444, detail="No kline data found for symbol.")
+            raise HTTPException(status_code=444, detail=f"No kline data found for {symbol} ({resolved}).")
+
+        is_stock = binance_client.is_stock_symbol(resolved)
+        meta = binance_client.get_stock_metadata(resolved) if is_stock else None
 
         # Format clean JSON output
         records = []
@@ -121,7 +197,11 @@ def get_symbol_klines(
             })
 
         return {
-            "symbol": symbol.upper(),
+            "symbol": resolved,
+            "display_ticker": meta["ticker"] if meta else resolved.replace("USDT", ""),
+            "company_name": meta["name"] if meta else resolved.replace("USDT", ""),
+            "asset_class": "STOCK" if is_stock else "CRYPTO",
+            "sector": meta["sector"] if meta else "Crypto",
             "interval": interval,
             "count": len(records),
             "klines": records
@@ -135,24 +215,53 @@ def get_trade_signals(
     rr: str = Query("1:2.0", description="Risk:Reward ratio: 1:1.5, 1:2.0, 1:3.0"),
     lookback: int = Query(3, ge=1, le=10, description="Scan last N candles for signals"),
     min_confidence: int = Query(0, ge=0, le=100, description="Minimum confidence score (0-100)"),
+    asset_class: str = Query("ALL", description="Filter by asset class: ALL, CRYPTO, STOCKS"),
+    mtf_aligned: bool = Query(False, description="Filter by MTF trend aligned signals only"),
 ):
-    """Scan live data for active trade signals with ATR-based SL/TP levels."""
+    """Scan live data for active trade signals across Crypto and US Stocks with MTF Confluence."""
     try:
         signals = scan_all_signals(
             interval=interval,
             rr_key=rr,
             lookback_bars=lookback,
             min_confidence=min_confidence,
+            asset_class=asset_class,
+            mtf_aligned_only=mtf_aligned,
         )
         return {
             "interval": interval,
             "rr_config": rr,
             "lookback_bars": lookback,
+            "asset_class": asset_class,
+            "mtf_aligned_only": mtf_aligned,
             "total_signals": len(signals),
             "signals": signals,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/futures/high-delta")
+def get_futures_high_delta(
+    min_volume: float = Query(5_000_000, description="Minimum 24h quote volume in USDT"),
+    min_natr: float = Query(0.5, description="Minimum 5-minute Normalized ATR %"),
+    limit: int = Query(40, ge=1, le=100, description="Max contracts to return"),
+    lookback_bars: int = Query(12, ge=3, le=24, description="Recent 5m bars to analyze (12 = 1 hr)"),
+    force_refresh: bool = Query(False, description="Bypass cache and force live scan")
+):
+    """Scan Binance USDⓈ-M Futures contracts for high 5-minute delta/volatility and 2:1 scalp setups."""
+    try:
+        data = scan_futures_high_delta(
+            min_volume=min_volume,
+            min_natr=min_natr,
+            limit=limit,
+            lookback_bars=lookback_bars,
+            force_refresh=force_refresh
+        )
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/wallet")
 def get_wallet():
@@ -382,7 +491,16 @@ def np_isnan(val: Any) -> bool:
 class BotConfigUpdate(BaseModel):
     paper_mode: Optional[bool] = None
     market_type: Optional[str] = None  # "futures" or "spot"
+    asset_filter: Optional[str] = None  # "all", "crypto", "stocks"
+    total_capital: Optional[float] = None
+    sizing_mode: Optional[str] = None  # "fixed", "percent_capital", "risk_pct"
     amount_per_trade: Optional[float] = None
+    trade_size_pct: Optional[float] = None
+    risk_per_trade_pct: Optional[float] = None
+    daily_profit_target: Optional[float] = None
+    trailing_stop_enabled: Optional[bool] = None
+    trailing_stop_callback_pct: Optional[float] = None
+    strategy_filter: Optional[str] = None
     leverage: Optional[int] = None
     min_confidence: Optional[int] = None
     max_positions: Optional[int] = None
@@ -390,6 +508,8 @@ class BotConfigUpdate(BaseModel):
     cooldown_hours: Optional[int] = None
     scan_interval_minutes: Optional[int] = None
     candle_interval: Optional[str] = None
+    mtf_filter_enabled: Optional[bool] = None
+    breakeven_stop_enabled: Optional[bool] = None
 
 
 @app.post("/api/bot/start")
@@ -414,7 +534,7 @@ def bot_stop():
 
 @app.get("/api/bot/status")
 def bot_status():
-    """Get current bot status, config, open positions, and recent log."""
+    """Get current bot status, config, open positions, capital metrics, and recent log."""
     try:
         return auto_trader.get_status()
     except Exception as e:
@@ -425,9 +545,52 @@ def bot_status():
 def bot_config(config: BotConfigUpdate):
     """Update bot configuration."""
     try:
-        updates = {k: v for k, v in config.dict().items() if v is not None}
+        data_dict = config.model_dump() if hasattr(config, "model_dump") else config.dict()
+        updates = {k: v for k, v in data_dict.items() if v is not None}
         auto_trader.update_config(updates)
         return {"message": "Config updated", "config": auto_trader.config}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/api/bot/square-off-all")
+def bot_square_off_all():
+    """Square off all open bot positions immediately."""
+    try:
+        result = auto_trader.square_off_all()
+        return result
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/api/bot/square-off/{symbol}")
+def bot_square_off_symbol(symbol: str):
+    """Square off a specific open position immediately."""
+    try:
+        result = auto_trader.square_off_position(symbol)
+        if result is None:
+            return JSONResponse(status_code=404, content={"error": f"No open position found for {symbol}"})
+        return {"message": f"Position {symbol} squared off", "closed_position": result}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/api/bot/emergency-stop")
+def bot_emergency_stop():
+    """Panic emergency stop: Stop bot engine and square off all open positions."""
+    try:
+        result = auto_trader.emergency_stop()
+        return result
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/api/bot/scan-now")
+def bot_scan_now():
+    """Trigger an immediate scan-filter-execute cycle on demand."""
+    try:
+        result = auto_trader.run_manual_scan()
+        return result
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -445,11 +608,63 @@ def bot_journal(
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+@app.delete("/api/bot/journal")
+def bot_clear_journal():
+    """Clear trade journal log entries."""
+    try:
+        trade_journal.clear()
+        return {"message": "Trade journal cleared successfully"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/bot/analytics")
+def bot_analytics():
+    """Get performance statistics and strategy breakdown."""
+    try:
+        strategy_stats = trade_journal.get_strategy_stats()
+        closures = trade_journal.get_all_closures()
+        total_trades = len(closures)
+        winning_trades = len([c for c in closures if float(c.get("pnl_usdt", 0)) > 0])
+        losing_trades = len([c for c in closures if float(c.get("pnl_usdt", 0)) < 0])
+        total_pnl = sum(float(c.get("pnl_usdt", 0)) for c in closures)
+        gross_profit = sum(float(c.get("pnl_usdt", 0)) for c in closures if float(c.get("pnl_usdt", 0)) > 0)
+        gross_loss = abs(sum(float(c.get("pnl_usdt", 0)) for c in closures if float(c.get("pnl_usdt", 0)) < 0))
+        profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (round(gross_profit, 2) if gross_profit > 0 else 0)
+        win_rate = round(winning_trades / total_trades * 100, 1) if total_trades > 0 else 0
+
+        return {
+            "total_closed_trades": total_trades,
+            "winning_trades": winning_trades,
+            "losing_trades": losing_trades,
+            "win_rate_pct": win_rate,
+            "total_realized_pnl": round(total_pnl, 2),
+            "gross_profit": round(gross_profit, 2),
+            "gross_loss": round(gross_loss, 2),
+            "profit_factor": profit_factor,
+            "strategy_stats": strategy_stats,
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+
 # Serve static frontend files if directory exists
 if FRONTEND_DIR.exists():
+    css_dir = FRONTEND_DIR / "css"
+    if css_dir.exists():
+        app.mount("/css", StaticFiles(directory=str(css_dir)), name="css")
+
+    js_dir = FRONTEND_DIR / "js"
+    if js_dir.exists():
+        app.mount("/js", StaticFiles(directory=str(js_dir)), name="js")
+
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
     @app.get("/")
+    @app.get("/index")
+    @app.get("/index.html")
+    @app.get("/dashboard")
     def read_root():
         index_file = FRONTEND_DIR / "index.html"
         if index_file.exists():
@@ -458,4 +673,21 @@ if FRONTEND_DIR.exists():
 
 if __name__ == "__main__":
     import uvicorn
+    import webbrowser
+    import threading
+
+    def open_browser():
+        url = f"http://{HOST}:{PORT}"
+        print(f"Opening {url} in your default browser...")
+        webbrowser.open(url)
+
+    # Launch browser after a brief delay so server has started
+    threading.Timer(1.2, open_browser).start()
+
+    print(f"\n=======================================================")
+    print(f"   CypherScreen - Binance Market Screener & Bot")
+    print(f"   URL: http://{HOST}:{PORT}")
+    print(f"   API Docs: http://{HOST}:{PORT}/docs")
+    print(f"=======================================================\n")
     uvicorn.run("backend.app:app", host=HOST, port=PORT, reload=DEBUG)
+

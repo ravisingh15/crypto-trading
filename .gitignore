@@ -41,3 +41,8 @@ build/
 logs/
 tmp/
 *.tmp
+.pytest_cache/
+
+# Local trading runtime state
+data_cache/*.json
+data_cache/*.jsonl

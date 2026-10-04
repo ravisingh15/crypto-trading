@@ -158,14 +158,19 @@ def generate_trades(
     datasets: Dict[str, pd.DataFrame],
     strategy_fn: Callable,
     direction: str,
-    sl_mult: float = 1.5,
-    tp_mult: float = 2.0,
+    sl_mult: float = 2.0,
+    tp_mult: float = 3.5,
     max_bars: int = 48,
     fee_pct: float = 0.00075,
     slippage_pct: float = 0.0003,
+    allow_overlap: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Generates all trades for a given strategy across multiple datasets.
+    
+    Args:
+        allow_overlap: If False (default), prevents opening new trades on the same
+                       symbol while a trade is already active (matches live bot mutex).
     """
     all_trades = []
 
@@ -178,14 +183,18 @@ def generate_trades(
             continue
 
         entry_indices = np.where(signal_mask)[0]
+        last_exit_idx = -1
 
         for idx in entry_indices:
+            if not allow_overlap and idx <= last_exit_idx:
+                continue
             if idx >= len(df) - 1:
                 continue
 
             exit_idx, exit_price, net_ret, reason = calculate_trade_exit(
                 df, idx, direction, sl_mult, tp_mult, fee_pct, slippage_pct, max_bars
             )
+            last_exit_idx = exit_idx
 
             all_trades.append({
                 'symbol': sym,

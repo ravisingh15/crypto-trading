@@ -8,7 +8,7 @@ import threading
 from datetime import datetime, timezone, timedelta
 from typing import Tuple, Dict, List, Any, Optional
 
-from backend.screener import CATEGORY_MAP
+from backend.screener import CATEGORY_MAP, get_symbol_category
 
 
 class RiskManager:
@@ -35,6 +35,7 @@ class RiskManager:
         today_executions: List[Dict[str, Any]],
         daily_pnl: float,
         leverage: int = 1,
+        strategy: str = "",
     ) -> Tuple[bool, str]:
         """
         Check if a new trade is allowed.
@@ -45,9 +46,17 @@ class RiskManager:
         """
         max_positions = self.config.get("max_positions", 3)
         max_daily_loss = self.config.get("max_daily_loss", 50)
+        daily_profit_target = self.config.get("daily_profit_target", 0)
+        total_capital = self.config.get("total_capital", 1000)
         cooldown_hours = self.config.get("cooldown_hours", 4)
         max_total_exposure = self.config.get("max_total_exposure", 500)
         max_sector_positions = self.config.get("max_sector_positions", 2)
+        strategy_filter = self.config.get("strategy_filter", "ALL")
+
+        # Gate 0: Strategy Filter check
+        if strategy_filter and strategy_filter.upper() != "ALL":
+            if strategy and strategy_filter.lower() not in strategy.lower():
+                return False, f"Strategy '{strategy}' does not match filter '{strategy_filter}'"
 
         # Gate 1: Max open positions
         if len(open_positions) >= max_positions:
@@ -56,6 +65,10 @@ class RiskManager:
         # Gate 2: Daily loss limit
         if daily_pnl <= -abs(max_daily_loss):
             return False, f"Daily loss limit hit (${daily_pnl:.2f} / -${max_daily_loss})"
+
+        # Gate 2b: Daily profit target hit (lock in profit)
+        if daily_profit_target > 0 and daily_pnl >= daily_profit_target:
+            return False, f"Daily profit target achieved (${daily_pnl:.2f} >= ${daily_profit_target:.2f})"
 
         # Gate 3: No duplicate symbols
         open_symbols = [p.get("symbol", "").upper() for p in open_positions]
@@ -81,11 +94,16 @@ class RiskManager:
         if amount <= 0:
             return False, "Trade amount must be greater than 0"
 
+        # Gate 5b: Total Capital deployment check
+        current_deployed = sum(p.get("amount_usdt", 0) for p in open_positions)
+        if current_deployed + amount > total_capital:
+            return False, f"Insufficient free capital (${current_deployed + amount:.2f} > Total Capital ${total_capital:.2f})"
+
         # Gate 6: Sector concentration — max N positions in same category
-        new_category = CATEGORY_MAP.get(symbol.upper(), "Altcoin")
+        new_category = get_symbol_category(symbol.upper())
         sector_count = 0
         for p in open_positions:
-            pos_category = CATEGORY_MAP.get(p.get("symbol", ""), "Altcoin")
+            pos_category = get_symbol_category(p.get("symbol", ""))
             if pos_category == new_category:
                 sector_count += 1
         if sector_count >= max_sector_positions:
@@ -103,3 +121,5 @@ class RiskManager:
             )
 
         return True, "OK"
+
+

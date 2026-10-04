@@ -196,6 +196,11 @@ class TradeJournal:
                 if e.get("type") == "CLOSED" and e.get("timestamp", "").startswith(today)
             ]
 
+    def get_all_closures(self) -> List[Dict[str, Any]]:
+        """Get all closed trades ever."""
+        with self._lock:
+            return [e for e in self._entries if e.get("type") == "CLOSED"]
+
     def get_daily_pnl(self) -> float:
         """Calculate today's realized P&L."""
         closures = self.get_today_closures()

@@ -39,10 +39,11 @@ MONTHS = 6  # Fetch 6 months of data
 FEE_PCT = 0.00075       # 0.075% Binance taker fee per side
 SLIPPAGE_PCT = 0.0003   # 0.03% slippage per side (market orders only)
 
-# Risk management
-SL_MULT = 1.5   # Stop-loss at 1.5x ATR
-TP_MULT = 3.0   # Take-profit at 3.0x ATR (2:1 reward-to-risk)
+# Risk management (Optimized with empirical 2.0x ATR SL for noise immunity)
+SL_MULT = 2.0   # Stop-loss at 2.0x ATR (noise-immune breathing room)
+TP_MULT = 3.5   # Take-profit at 3.5x ATR (1:1.75 true reward-to-risk)
 MAX_BARS = 48   # Max hold time in candles
+ALLOW_OVERLAP = False  # Realistic non-overlapping entries matching live bot mutex
 
 # ============================================================================
 # FETCH DATA
@@ -79,7 +80,7 @@ for sym, df in datasets.items():
 # ============================================================================
 
 print("\n" + "=" * 90)
-print(f"BACKTESTING {len(STRATEGIES)} STRATEGIES (SL={SL_MULT}x ATR, TP={TP_MULT}x ATR, Friction={2*(FEE_PCT+SLIPPAGE_PCT)*100:.3f}%)")
+print(f"BACKTESTING {len(STRATEGIES)} STRATEGIES (SL={SL_MULT}x ATR, TP={TP_MULT}x ATR, Overlap={ALLOW_OVERLAP}, Friction={2*(FEE_PCT+SLIPPAGE_PCT)*100:.3f}%)")
 print("=" * 90)
 
 results = []
@@ -93,6 +94,7 @@ for strat_name, strat_info in STRATEGIES.items():
         sl_mult=SL_MULT, tp_mult=TP_MULT,
         max_bars=MAX_BARS,
         fee_pct=FEE_PCT, slippage_pct=SLIPPAGE_PCT,
+        allow_overlap=ALLOW_OVERLAP,
     )
     
     if len(all_trades) >= 5:

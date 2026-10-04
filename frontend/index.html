@@ -29,7 +29,11 @@
             </div>
 
             <div class="header-actions">
-                <button class="btn btn-outline" id="btn-refresh">
+                <div class="last-refreshed-badge" id="header-last-refreshed" title="Time since last data refresh">
+                    <span class="refresh-clock">🕒</span>
+                    <span class="last-refreshed-text" id="last-refreshed-time">Updating...</span>
+                </div>
+                <button class="btn btn-outline" id="btn-refresh" title="Refresh market overview & screener data">
                     <span class="spin-icon">↻</span> Refresh
                 </button>
                 <div class="status-indicator online">
@@ -79,10 +83,54 @@
                 </div>
             </section>
 
+            <!-- Global Macro Intelligence & Market Breadth Bar -->
+            <section class="macro-ribbon glass-card" id="macro-ribbon">
+                <div class="macro-item" id="crypto-macro-item">
+                    <span class="macro-badge-icon">🪙</span>
+                    <div class="macro-info">
+                        <span class="macro-title">Crypto Benchmark (BTC)</span>
+                        <span class="macro-regime-pill" id="macro-btc-regime">BULL EXPANSION</span>
+                    </div>
+                </div>
+
+                <div class="macro-item" id="equity-macro-item">
+                    <span class="macro-badge-icon">🏛️</span>
+                    <div class="macro-info">
+                        <span class="macro-title">US Equities Benchmark (SPY)</span>
+                        <span class="macro-regime-pill" id="macro-spy-regime">BULL REGIME</span>
+                    </div>
+                </div>
+
+                <div class="macro-item breadth-item" id="breadth-macro-item">
+                    <span class="macro-badge-icon">📊</span>
+                    <div class="macro-info">
+                        <span class="macro-title">Market Breadth (% > EMA 50)</span>
+                        <div class="breadth-meter-wrap">
+                            <div class="breadth-progress-track">
+                                <div class="breadth-progress-fill" id="breadth-progress-fill" style="width: 50%;"></div>
+                            </div>
+                            <span class="breadth-pct-label" id="breadth-pct-label">50% Bullish</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="macro-item phase-item" id="phase-macro-item">
+                    <span class="macro-badge-icon">⚡</span>
+                    <div class="macro-info">
+                        <span class="macro-title">Market Regime Phase</span>
+                        <span class="macro-phase-label" id="macro-phase-label">ACCUMULATION</span>
+                    </div>
+                </div>
+            </section>
+
             <!-- Tab Navigation -->
             <section class="tab-nav glass-card" id="tab-nav">
                 <button class="tab-btn active" data-tab="screener">
                     <span class="tab-icon">📊</span> Market Screener
+                </button>
+                <button class="tab-btn" data-tab="high-delta">
+                    <span class="tab-icon">⚡</span> 5m High Delta (Futures)
+                    <span class="delta-badge" id="high-delta-badge">HOT</span>
                 </button>
                 <button class="tab-btn" data-tab="signals">
                     <span class="tab-icon">🎯</span> Trade Signals
@@ -97,29 +145,47 @@
                 </button>
             </section>
 
+
             <!-- Screener Controls Toolbar -->
             <section class="screener-toolbar glass-card" id="screener-panel">
                 <div class="toolbar-left">
+                    <!-- Asset Class Switcher -->
+                    <div class="asset-class-selector" id="asset-class-selector">
+                        <button class="asset-pill active" data-asset="ALL">🌐 All Markets</button>
+                        <button class="asset-pill" data-asset="CRYPTO">🪙 Crypto</button>
+                        <button class="asset-pill" data-asset="STOCKS">🏛️ US Stocks (bStocks)</button>
+                    </div>
+
                     <div class="search-box">
                         <span class="search-icon">🔍</span>
-                        <input type="text" id="search-input" placeholder="Search symbol (e.g. BTC, SOL, PEPE)...">
+                        <input type="text" id="search-input" placeholder="Search symbol or company (e.g. TSLA, NVDA, BTC, Apple)...">
                     </div>
 
                     <div class="filter-group">
-                        <label>Category:</label>
+                        <label>Category / Sector:</label>
                         <select id="category-select" class="select-input">
-                            <option value="ALL">All Categories</option>
-                            <option value="Layer 1">Layer 1</option>
-                            <option value="AI">AI / Data</option>
-                            <option value="DeFi">DeFi</option>
-                            <option value="Meme">Meme Coins</option>
-                            <option value="Layer 2">Layer 2</option>
+                            <option value="ALL">All Categories &amp; Sectors</option>
+                            <optgroup label="🏛️ US Stocks &amp; ETFs">
+                                <option value="Magnificent 7">Magnificent 7 (AAPL, NVDA, TSLA...)</option>
+                                <option value="Semiconductors &amp; AI">Semiconductors &amp; AI (AMD, TSM...)</option>
+                                <option value="Crypto Equities">Crypto Equities (MSTR, COIN...)</option>
+                                <option value="US Indices &amp; ETFs">US Indices &amp; ETFs (SPY, QQQ...)</option>
+                                <option value="Fintech &amp; Tech">Fintech &amp; Tech (PLTR, GME...)</option>
+                            </optgroup>
+                            <optgroup label="🪙 Crypto Sectors">
+                                <option value="Layer 1">Layer 1 (BTC, ETH, SOL...)</option>
+                                <option value="AI">AI &amp; Data (FET, RENDER...)</option>
+                                <option value="DeFi">DeFi (UNI, AAVE, MKR...)</option>
+                                <option value="Meme">Meme Coins (DOGE, PEPE...)</option>
+                                <option value="Layer 2">Layer 2 (ARB, OP...)</option>
+                            </optgroup>
                         </select>
                     </div>
 
                     <div class="filter-group">
                         <label>Timeframe:</label>
                         <select id="timeframe-select" class="select-input">
+                            <option value="5m">5m (Scalp)</option>
                             <option value="15m">15m Candles</option>
                             <option value="1h" selected>1h Candles</option>
                             <option value="4h">4h Candles</option>
@@ -127,21 +193,36 @@
                         </select>
                     </div>
 
+
                     <div class="filter-group">
                         <label>Signal Filter:</label>
                         <select id="signal-filter-select" class="select-input">
                             <option value="ALL">All Recommendations</option>
                             <option value="STRONG BUY">Strong Buy Only</option>
-                            <option value="BUY">Buy & Strong Buy</option>
+                            <option value="BUY">Buy &amp; Strong Buy</option>
                             <option value="SELL">Sell Signals</option>
                         </select>
                     </div>
                 </div>
 
                 <div class="toolbar-right">
+                    <div class="auto-refresh-control">
+                        <label for="auto-refresh-select"><span class="auto-refresh-icon">⏱️</span> Auto-Refresh:</label>
+                        <select id="auto-refresh-select" class="select-input select-sm">
+                            <option value="off">Off (Manual)</option>
+                            <option value="15000">15s</option>
+                            <option value="30000">30s</option>
+                            <option value="60000" selected>1 min</option>
+                            <option value="300000">5 min</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-outline btn-sm btn-screener-refresh" id="btn-screener-refresh" title="Refresh Screener Data">
+                        <span class="spin-icon">↻</span> Refresh
+                    </button>
                     <span class="records-count" id="records-count">Showing 0 Pairs</span>
                 </div>
             </section>
+
 
             <!-- Screener Data Table -->
             <section class="table-container glass-card" id="screener-table-section">
@@ -155,6 +236,7 @@
                             <th data-sort="rsi" class="sortable">RSI (14) <span class="sort-arrow">↕</span></th>
                             <th data-sort="macd_hist" class="sortable">MACD Hist <span class="sort-arrow">↕</span></th>
                             <th data-sort="rvol" class="sortable">RVOL (20) <span class="sort-arrow">↕</span></th>
+                            <th data-sort="rs_rating" class="sortable">RS Alpha <span class="sort-arrow">↕</span></th>
                             <th data-sort="quote_volume_24h" class="sortable">24h Volume <span class="sort-arrow">↕</span></th>
                             <th data-sort="score" class="sortable">Signal Score <span class="sort-arrow">↕</span></th>
                             <th data-sort="recommendation" class="sortable">Signal Status <span class="sort-arrow">↕</span></th>
@@ -163,11 +245,12 @@
                     </thead>
                     <tbody id="table-body">
                         <tr>
-                            <td colspan="11" class="loading-cell">
-                                <div class="spinner"></div> Running market scan & calculating indicators...
+                            <td colspan="12" class="loading-cell">
+                                <div class="spinner"></div> Running market scan &amp; calculating macro confluence...
                             </td>
                         </tr>
                     </tbody>
+
                 </table>
             </section>
 
@@ -176,6 +259,10 @@
                 <!-- Signal Controls -->
                 <div class="signals-toolbar glass-card">
                     <div class="toolbar-left">
+                        <div class="filter-group">
+                            <input type="text" id="signal-search-input" class="search-input" placeholder="🔍 Filter coin / strategy..." style="max-width: 170px; padding: 6px 12px; font-size: 12px;">
+                        </div>
+
                         <div class="filter-group">
                             <label>Risk:Reward:</label>
                             <select id="rr-select" class="select-input">
@@ -188,6 +275,7 @@
                         <div class="filter-group">
                             <label>Timeframe:</label>
                             <select id="signal-timeframe-select" class="select-input">
+                                <option value="5m">5m (Scalp)</option>
                                 <option value="15m">15m</option>
                                 <option value="1h" selected>1h</option>
                                 <option value="4h">4h</option>
@@ -195,12 +283,21 @@
                         </div>
 
                         <div class="filter-group">
-                            <label>Min Confidence:</label>
+                            <label>Min Conf:</label>
                             <select id="confidence-select" class="select-input">
-                                <option value="0">All Signals</option>
+                                <option value="0">All</option>
                                 <option value="30">30+ (Low)</option>
-                                <option value="50" selected>50+ (Medium)</option>
+                                <option value="50" selected>50+ (Med)</option>
                                 <option value="70">70+ (High)</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Markets:</label>
+                            <select id="signal-asset-select" class="select-input">
+                                <option value="ALL" selected>All</option>
+                                <option value="CRYPTO">Crypto</option>
+                                <option value="STOCKS">Stocks</option>
                             </select>
                         </div>
 
@@ -208,8 +305,27 @@
                             <label>Direction:</label>
                             <select id="direction-filter" class="select-input">
                                 <option value="ALL">All</option>
-                                <option value="LONG">Long Only</option>
-                                <option value="SHORT">Short Only</option>
+                                <option value="LONG">Long</option>
+                                <option value="SHORT">Short</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>MTF 4h:</label>
+                            <select id="signal-mtf-filter" class="select-input">
+                                <option value="ALL">All Biases</option>
+                                <option value="ALIGNED" selected>4h Aligned Only</option>
+                                <option value="BULL">4h Bull</option>
+                                <option value="BEAR">4h Bear</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Alpha Tier:</label>
+                            <select id="signal-tier-filter" class="select-input">
+                                <option value="ALL" selected>All Tiers</option>
+                                <option value="PROFITABLE">Top Alpha (PF > 1.0)</option>
+                                <option value="A">Tier A/A+ (PF ≥ 1.10)</option>
                             </select>
                         </div>
 
@@ -217,6 +333,7 @@
                             <span class="scan-icon">🎯</span> Scan Now
                         </button>
                     </div>
+
                     <div class="toolbar-right">
                         <span class="records-count" id="signal-records-count">0 Active Signals</span>
                     </div>
@@ -227,6 +344,100 @@
                     <div class="signal-loading glass-card">
                         <div class="spinner"></div>
                         <p>Click <strong>"Scan Now"</strong> to detect live trade entry points...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 5m High Delta Futures Panel (Hidden by Default) -->
+            <section class="high-delta-panel" id="high-delta-panel" style="display:none;">
+                <!-- High Delta Toolbar -->
+                <div class="signals-toolbar glass-card">
+                    <div class="toolbar-left">
+                        <div class="filter-group">
+                            <input type="text" id="delta-search-input" class="search-input" placeholder="🔍 Search futures pair..." style="max-width: 170px; padding: 6px 12px; font-size: 12px;">
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Min 5m Range:</label>
+                            <select id="delta-min-natr-select" class="select-input">
+                                <option value="0.4">All Active (&gt;0.4%)</option>
+                                <option value="0.7">Active (&gt;0.7%)</option>
+                                <option value="1.0" selected>High Delta (&gt;1.0%)</option>
+                                <option value="1.5">Extreme (&gt;1.5%)</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Min 24h Vol:</label>
+                            <select id="delta-volume-select" class="select-input">
+                                <option value="1000000">$1M+</option>
+                                <option value="5000000" selected>$5M+</option>
+                                <option value="20000000">$20M+</option>
+                                <option value="50000000">$50M+ (Mega Liquid)</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>5m Momentum:</label>
+                            <select id="delta-momentum-select" class="select-input">
+                                <option value="ALL">All Directions</option>
+                                <option value="BULLISH">Bullish Momentum</option>
+                                <option value="BEARISH">Bearish Momentum</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Volatility Tier:</label>
+                            <select id="delta-tier-select" class="select-input">
+                                <option value="ALL">All Tiers</option>
+                                <option value="EXTREME">🔥 Extreme Only</option>
+                                <option value="HIGH">⚡ High &amp; Extreme</option>
+                            </select>
+                        </div>
+
+                        <button class="btn btn-primary" id="btn-scan-delta">
+                            <span class="scan-icon">⚡</span> Scan 5m Futures
+                        </button>
+                    </div>
+
+                    <div class="toolbar-right">
+                        <div class="auto-refresh-control">
+                            <label for="delta-auto-refresh-select"><span class="auto-refresh-icon">⏱️</span> Auto:</label>
+                            <select id="delta-auto-refresh-select" class="select-input select-sm">
+                                <option value="off">Off</option>
+                                <option value="15000">15s (Scalper)</option>
+                                <option value="30000" selected>30s</option>
+                                <option value="60000">60s</option>
+                            </select>
+                        </div>
+                        <span class="records-count" id="delta-records-count">0 High Delta Contracts</span>
+                    </div>
+                </div>
+
+                <!-- High Delta Summary Stat Cards -->
+                <div class="delta-summary-grid">
+                    <div class="delta-stat-card glass-card">
+                        <span class="delta-stat-label">🔥 Top 5m Delta Leader</span>
+                        <div class="delta-stat-val highlight-gold" id="delta-top-leader">--</div>
+                        <span class="delta-stat-sub" id="delta-top-leader-sub">Highest 5m Volatility</span>
+                    </div>
+                    <div class="delta-stat-card glass-card">
+                        <span class="delta-stat-label">⚡ Avg 5m Market Range</span>
+                        <div class="delta-stat-val highlight-cyan" id="delta-avg-range">--</div>
+                        <span class="delta-stat-sub">Across top futures pairs</span>
+                    </div>
+                    <div class="delta-stat-card glass-card">
+                        <span class="delta-stat-label">🎯 2:1 Scalp Setups Found</span>
+                        <div class="delta-stat-val highlight-green" id="delta-setups-count">0</div>
+                        <span class="delta-stat-sub">1R Risk / 2R Reward</span>
+                    </div>
+                </div>
+
+                <!-- High Delta Contracts Grid -->
+                <div class="delta-cards-grid" id="delta-cards-grid">
+                    <div class="signal-loading glass-card">
+                        <div class="spinner"></div>
+                        <p>Click <strong>"Scan 5m Futures"</strong> to discover contracts moving &gt;1% per 5-minute bar...</p>
                     </div>
                 </div>
             </section>
@@ -257,17 +468,27 @@
 
             <!-- Bot Auto-Trader Panel (Hidden by Default) -->
             <section class="bot-panel" id="bot-panel" style="display:none;">
-                <!-- Bot Header -->
+                <!-- Bot Header with Action Toolbar -->
                 <div class="bot-header glass-card">
                     <div class="bot-header-left">
                         <div class="bot-title-row">
                             <span class="bot-icon">🤖</span>
-                            <h3>Auto-Trader</h3>
+                            <h3>Autonomous Trading Terminal</h3>
                             <span class="bot-mode-badge" id="bot-mode-badge">PAPER MODE</span>
+                            <span class="bot-strategy-badge" id="bot-strategy-badge">ALL STRATEGIES</span>
                         </div>
-                        <p class="bot-subtitle" id="bot-subtitle">Configure and start the autonomous trading bot</p>
+                        <p class="bot-subtitle" id="bot-subtitle">Autonomous scanning, risk-gated execution, dynamic capital allocation, and live position management</p>
                     </div>
                     <div class="bot-header-right">
+                        <button class="btn btn-action-primary" id="btn-bot-scan-now" title="Trigger an immediate scan-filter-execute cycle">
+                            <span class="btn-action-icon">⚡</span> <span id="scan-now-label">Run Scan Now</span>
+                        </button>
+                        <button class="btn btn-action-warning" id="btn-bot-square-off-all" title="Liquidate all open positions at market price">
+                            <span class="btn-action-icon">⚠️</span> Square Off All
+                        </button>
+                        <button class="btn btn-action-panic" id="btn-bot-panic" title="Stop bot engine and liquidate all positions immediately">
+                            <span class="btn-action-icon">🛑</span> Panic Stop
+                        </button>
                         <button class="bot-toggle-btn" id="btn-bot-toggle">
                             <span class="bot-toggle-label" id="bot-toggle-label">Start Bot</span>
                             <span class="bot-toggle-switch" id="bot-toggle-switch"></span>
@@ -275,97 +496,250 @@
                     </div>
                 </div>
 
-                <!-- Bot Stats Row -->
-                <div class="bot-stats-row">
-                    <div class="bot-stat glass-card">
-                        <span class="bot-stat-label">Status</span>
-                        <span class="bot-stat-value" id="bot-stat-status">⏹ Stopped</span>
+                <!-- Capital Allocation & Portfolio Health Strip -->
+                <div class="bot-capital-strip glass-card">
+                    <div class="capital-card-item">
+                        <span class="cap-label">Total Allocated Capital</span>
+                        <div class="cap-value-wrap">
+                            <span class="cap-currency">$</span>
+                            <input type="number" class="cap-input" id="bot-stat-total-cap-input" value="1000" min="50" step="50" title="Click to edit total capital">
+                        </div>
+                        <span class="cap-sub">Max capital allocated to bot</span>
                     </div>
-                    <div class="bot-stat glass-card">
-                        <span class="bot-stat-label">Open Positions</span>
-                        <span class="bot-stat-value" id="bot-stat-positions">0 / 3</span>
+
+                    <div class="capital-card-item">
+                        <span class="cap-label">Capital Deployed</span>
+                        <span class="cap-value highlight-cyan" id="bot-stat-deployed-cap">$0.00</span>
+                        <span class="cap-sub" id="bot-stat-deployed-pct">0.0% of Total</span>
                     </div>
-                    <div class="bot-stat glass-card">
-                        <span class="bot-stat-label">Daily P&amp;L</span>
-                        <span class="bot-stat-value" id="bot-stat-pnl">$0.00</span>
+
+                    <div class="capital-card-item">
+                        <span class="cap-label">Free Margin Buffer</span>
+                        <span class="cap-value highlight-green" id="bot-stat-free-cap">$1,000.00</span>
+                        <span class="cap-sub">Available for new entries</span>
                     </div>
-                    <div class="bot-stat glass-card">
-                        <span class="bot-stat-label">Total Trades</span>
-                        <span class="bot-stat-value" id="bot-stat-trades">0</span>
+
+                    <div class="capital-card-item">
+                        <span class="cap-label">Daily Realized P&amp;L</span>
+                        <span class="cap-value" id="bot-stat-pnl">$0.00</span>
+                        <span class="cap-sub" id="bot-stat-pnl-sub">Target: $100.00</span>
+                    </div>
+
+                    <div class="capital-card-item">
+                        <span class="cap-label">Win Rate &amp; Closed Trades</span>
+                        <span class="cap-value highlight-gold" id="bot-stat-winrate">0.0%</span>
+                        <span class="cap-sub" id="bot-stat-trades-sub">0 closed (0W / 0L)</span>
                     </div>
                 </div>
 
-                <!-- Bot Config + Positions Side by Side -->
+                <!-- Visual Capital Utilization Gauge -->
+                <div class="capital-bar-card glass-card">
+                    <div class="capital-bar-header">
+                        <span class="bar-title">📊 Capital Utilization Gauge</span>
+                        <span class="bar-ratio" id="capital-bar-ratio">Deployed: $0.00 / $1,000.00 (0.0%)</span>
+                    </div>
+                    <div class="capital-progress-track">
+                        <div class="capital-progress-fill" id="capital-progress-fill" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <!-- Bot Config & Open Positions Grid -->
                 <div class="bot-content-grid">
-                    <!-- Config Panel -->
+                    <!-- Config Panel with Sub-Tabs -->
                     <div class="bot-config glass-card">
-                        <h4>⚙️ Configuration</h4>
-                        <div class="bot-config-grid">
-                            <div class="bot-config-field">
-                                <label>Amount Per Trade (USDT)</label>
-                                <input type="number" id="bot-cfg-amount" value="50" min="10" step="5">
-                            </div>
-                            <div class="bot-config-field">
-                                <label>Leverage</label>
-                                <input type="number" id="bot-cfg-leverage" value="5" min="1" max="125" step="1">
-                            </div>
-                            <div class="bot-config-field">
-                                <label>Min Confidence (0-100)</label>
-                                <input type="number" id="bot-cfg-confidence" value="60" min="0" max="100" step="5">
-                            </div>
-                            <div class="bot-config-field">
-                                <label>Max Open Positions</label>
-                                <input type="number" id="bot-cfg-max-pos" value="3" min="1" max="10">
-                            </div>
-                            <div class="bot-config-field">
-                                <label>Max Daily Loss ($)</label>
-                                <input type="number" id="bot-cfg-max-loss" value="50" min="10" step="10">
-                            </div>
-                            <div class="bot-config-field">
-                                <label>Scan Interval (min)</label>
-                                <input type="number" id="bot-cfg-interval" value="60" min="5" max="1440" step="5">
-                            </div>
-                            <div class="bot-config-field">
-                                <label>Cooldown (hours)</label>
-                                <input type="number" id="bot-cfg-cooldown" value="4" min="0" max="24">
-                            </div>
-                            <div class="bot-config-field">
-                                <label>Market</label>
-                                <select id="bot-cfg-market" class="select-input">
-                                    <option value="futures" selected>Futures (LONG + SHORT)</option>
-                                    <option value="spot">Spot (LONG only)</option>
-                                </select>
+                        <div class="bot-config-header">
+                            <h4>⚙️ Bot Parameters &amp; Risk Controls</h4>
+                            <div class="bot-config-subtabs" id="bot-config-subtabs">
+                                <button class="subtab-btn active" data-subtab="sizing">💰 Sizing</button>
+                                <button class="subtab-btn" data-subtab="risk">🛡️ Risk</button>
+                                <button class="subtab-btn" data-subtab="strategy">🎯 Strategy</button>
+                                <button class="subtab-btn" data-subtab="trailing">📈 Trailing SL</button>
                             </div>
                         </div>
+
+                        <!-- Subtab 1: Sizing & Capital -->
+                        <div class="subtab-pane active" id="subtab-sizing">
+                            <div class="bot-config-grid">
+                                <div class="bot-config-field">
+                                    <label>Position Sizing Mode</label>
+                                    <select id="bot-cfg-sizing-mode" class="select-input">
+                                        <option value="fixed" selected>Fixed USDT per Trade</option>
+                                        <option value="percent_capital">% of Total Capital</option>
+                                        <option value="risk_pct">% Account Risk (ATR/SL based)</option>
+                                    </select>
+                                </div>
+                                <div class="bot-config-field" id="bot-cfg-amount-group">
+                                    <label id="bot-cfg-amount-label">Fixed Amount per Trade (USDT)</label>
+                                    <input type="number" id="bot-cfg-amount" value="50" min="5" step="5">
+                                </div>
+                                <div class="bot-config-field" id="bot-cfg-trade-pct-group">
+                                    <label>Trade Size (% of Total Cap)</label>
+                                    <input type="number" id="bot-cfg-trade-pct" value="5.0" min="0.5" max="50" step="0.5">
+                                </div>
+                                <div class="bot-config-field" id="bot-cfg-risk-pct-group">
+                                    <label>Risk Per Trade (% of Cap on SL)</label>
+                                    <input type="number" id="bot-cfg-risk-pct" value="2.0" min="0.1" max="10" step="0.1">
+                                </div>
+                                <div class="bot-config-field">
+                                    <label>Futures Leverage (1-125x)</label>
+                                    <input type="number" id="bot-cfg-leverage" value="5" min="1" max="125" step="1">
+                                </div>
+                                <div class="bot-config-field">
+                                    <label>Market Type</label>
+                                    <select id="bot-cfg-market" class="select-input">
+                                        <option value="futures" selected>Futures (LONG + SHORT)</option>
+                                        <option value="spot">Spot (LONG only)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Subtab 2: Risk Limits -->
+                        <div class="subtab-pane" id="subtab-risk" style="display:none;">
+                            <div class="bot-config-grid">
+                                <div class="bot-config-field">
+                                    <label>Max Open Positions</label>
+                                    <input type="number" id="bot-cfg-max-pos" value="3" min="1" max="10">
+                                </div>
+                                <div class="bot-config-field">
+                                    <label>Max Daily Loss Limit ($)</label>
+                                    <input type="number" id="bot-cfg-max-loss" value="50" min="10" step="10">
+                                </div>
+                                <div class="bot-config-field">
+                                    <label>Daily Profit Goal ($) — Auto Lock</label>
+                                    <input type="number" id="bot-cfg-daily-profit-target" value="100" min="0" step="10">
+                                </div>
+                                <div class="bot-config-field">
+                                    <label>Max Total Exposure ($)</label>
+                                    <input type="number" id="bot-cfg-max-exposure" value="500" min="50" step="50">
+                                </div>
+                                <div class="bot-config-field">
+                                    <label>Symbol Cooldown (hours)</label>
+                                    <input type="number" id="bot-cfg-cooldown" value="4" min="0" max="24">
+                                </div>
+                                <div class="bot-config-field">
+                                    <label>Min Signal Confidence (0-100)</label>
+                                    <input type="number" id="bot-cfg-confidence" value="60" min="0" max="100" step="5">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Subtab 3: Strategy & Market -->
+                        <div class="subtab-pane" id="subtab-strategy" style="display:none;">
+                            <div class="bot-config-grid">
+                                <div class="bot-config-field">
+                                    <label>Asset Focus</label>
+                                    <select id="bot-cfg-asset" class="select-input">
+                                        <option value="all" selected>All Markets (Crypto + bStocks)</option>
+                                        <option value="crypto">Crypto Only</option>
+                                        <option value="stocks">US Stocks Only</option>
+                                    </select>
+                                </div>
+                                <div class="bot-config-field">
+                                    <label>Strategy Filter / Whitelist</label>
+                                    <select id="bot-cfg-strategy" class="select-input">
+                                        <option value="ALL" selected>All Active Strategies</option>
+                                        <option value="RSI">RSI Reversals Only</option>
+                                        <option value="MACD">MACD Crossovers Only</option>
+                                        <option value="EMA">EMA Confluence Only</option>
+                                        <option value="Bollinger">Bollinger Squeeze Only</option>
+                                        <option value="SuperTrend">SuperTrend Breakouts Only</option>
+                                    </select>
+                                </div>
+                                <div class="bot-config-field">
+                                    <label>Candle Timeframe</label>
+                                    <select id="bot-cfg-timeframe" class="select-input">
+                                        <option value="5m">5m (Scalping)</option>
+                                        <option value="15m">15m Candles</option>
+                                        <option value="1h" selected>1h Candles (Recommended)</option>
+                                        <option value="4h">4h Candles (Swing)</option>
+                                        <option value="1d">1d Candles (Position)</option>
+                                    </select>
+                                </div>
+                                <div class="bot-config-field">
+                                    <label>Scan Interval (min)</label>
+                                    <input type="number" id="bot-cfg-interval" value="60" min="1" max="1440" step="5">
+                                </div>
+                                <div class="bot-config-field" style="grid-column: 1 / -1;">
+                                    <label class="bot-toggle-row">
+                                        <input type="checkbox" id="bot-cfg-mtf-enabled" checked>
+                                        <span>🛡️ Enable Multi-Timeframe (MTF) 4h Trend Filter</span>
+                                    </label>
+                                    <p class="field-hint">Enforces higher timeframe alignment: blocks counter-trend setups (e.g., skips shorts during a 4h Bull trend, skips longs during a 4h Bear trend).</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Subtab 4: Trailing Stop Loss -->
+                        <div class="subtab-pane" id="subtab-trailing" style="display:none;">
+                            <div class="bot-config-grid">
+                                <div class="bot-config-field" style="grid-column: 1 / -1;">
+                                    <label class="bot-toggle-row">
+                                        <input type="checkbox" id="bot-cfg-breakeven-enabled" checked>
+                                        <span>🔒 Enable Breakeven Stop-Loss Protection (+1R)</span>
+                                    </label>
+                                    <p class="field-hint">Automatically moves Stop Loss to Entry price (plus fee buffer) once the trade reaches 1.0R in profit, locking in zero downside risk.</p>
+                                </div>
+                                <div class="bot-config-field" style="grid-column: 1 / -1;">
+                                    <label class="bot-toggle-row">
+                                        <input type="checkbox" id="bot-cfg-trailing-enabled">
+                                        <span>🚀 Enable Dynamic Trailing Stop Loss</span>
+                                    </label>
+                                    <p class="field-hint">Automatically ratchets your Stop Loss upward (Longs) or downward (Shorts) as price moves into profit to lock in gains.</p>
+                                </div>
+                                <div class="bot-config-field">
+                                    <label>Trailing Callback Offset (%)</label>
+                                    <input type="number" id="bot-cfg-trailing-callback" value="1.5" min="0.2" max="10" step="0.1">
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="bot-config-actions">
                             <label class="bot-paper-toggle">
                                 <input type="checkbox" id="bot-cfg-paper" checked>
-                                <span>📝 Paper Trading (no real orders)</span>
+                                <span>📝 Paper Trading Mode (Zero Risk Simulation)</span>
                             </label>
-                            <button class="btn btn-outline" id="btn-save-bot-config">💾 Save Config</button>
+                            <button class="btn btn-outline" id="btn-save-bot-config">💾 Save Configuration</button>
                         </div>
                     </div>
 
-                    <!-- Open Positions -->
+                    <!-- Active Open Positions List -->
                     <div class="bot-positions glass-card">
-                        <h4>📈 Open Positions</h4>
+                        <div class="bot-positions-header">
+                            <h4>📈 Active Open Positions (<span id="bot-positions-count">0</span>)</h4>
+                            <span class="bot-positions-sub" id="bot-positions-limit">Max 3 allowed</span>
+                        </div>
                         <div class="bot-positions-list" id="bot-positions-list">
-                            <div class="bot-empty-state">No open positions</div>
+                            <div class="bot-empty-state">No open positions. Start the bot or click "Run Scan Now" to begin.</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Activity Log -->
+                <!-- Activity Log & Performance Analytics -->
                 <div class="bot-log glass-card">
                     <div class="bot-log-header">
-                        <h4>📋 Activity Log</h4>
-                        <span class="bot-log-count" id="bot-log-count">0 entries</span>
+                        <div class="bot-log-header-left">
+                            <h4>📋 Real-Time Activity Journal</h4>
+                            <div class="log-filter-pills" id="log-filter-pills">
+                                <button class="log-pill active" data-filter="ALL">All Events</button>
+                                <button class="log-pill" data-filter="EXECUTE">Executions</button>
+                                <button class="log-pill" data-filter="CLOSED">Closures</button>
+                                <button class="log-pill" data-filter="SIGNAL">Signals</button>
+                                <button class="log-pill" data-filter="RISK_BLOCKED">Risk Blocks</button>
+                                <button class="log-pill" data-filter="TRAILING_SL">Trailing SL</button>
+                            </div>
+                        </div>
+                        <div class="bot-log-header-right">
+                            <span class="bot-log-count" id="bot-log-count">0 entries</span>
+                            <button class="btn-icon-text" id="btn-clear-journal" title="Clear journal history">🗑️ Clear Log</button>
+                        </div>
                     </div>
                     <div class="bot-log-entries" id="bot-log-entries">
                         <div class="bot-empty-state">No activity yet. Start the bot to begin scanning.</div>
                     </div>
                 </div>
             </section>
+
 
         </main>
     </div>
@@ -456,17 +830,32 @@
         <div class="modal-card glass-card">
             <div class="modal-header">
                 <div class="modal-title">
-                    <h2 id="modal-symbol">BTCUSDT</h2>
+                    <div class="modal-symbol-wrap">
+                        <h2 id="modal-symbol">BTCUSDT</h2>
+                        <span class="modal-company-name" id="modal-company-name">Bitcoin</span>
+                    </div>
+                    <span class="badge badge-asset" id="modal-asset-class">CRYPTO</span>
                     <span class="badge" id="modal-category">Layer 1</span>
                     <span class="badge" id="modal-recommendation">STRONG BUY</span>
                 </div>
-                <button class="btn-close" id="btn-close-modal">✕</button>
+
+                <div class="modal-right-controls" style="display: flex; align-items: center; gap: 12px;">
+                    <div class="modal-tf-group" id="modal-tf-group">
+                        <button class="modal-tf-btn" data-tf="5m">5m</button>
+                        <button class="modal-tf-btn" data-tf="15m">15m</button>
+                        <button class="modal-tf-btn active" data-tf="1h">1h</button>
+                        <button class="modal-tf-btn" data-tf="4h">4h</button>
+                        <button class="modal-tf-btn" data-tf="1d">1d</button>
+                    </div>
+                    <button class="btn-close" id="btn-close-modal">✕</button>
+                </div>
             </div>
             
             <div class="modal-body">
                 <div class="chart-container">
                     <canvas id="candle-chart" width="800" height="380"></canvas>
                 </div>
+
 
                 <div class="modal-sidebar">
                     <h3>Technical Signals Breakdown</h3>
@@ -495,8 +884,44 @@
         </div>
     </div>
 
+    <!-- Square Off All Confirmation Modal -->
+    <div class="modal-overlay" id="square-off-modal" style="display:none;">
+        <div class="modal-card glass-card square-off-modal-card">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <h2>⚠️ Emergency Square Off All</h2>
+                </div>
+                <button class="btn-close" id="btn-close-square-off-modal">✕</button>
+            </div>
+
+            <div class="trade-modal-body">
+                <div class="square-off-warning-box">
+                    <span class="warning-icon">🚨</span>
+                    <div>
+                        <strong style="color: var(--amber-warning); font-size: 14px;">Immediate Market Liquidation</strong>
+                        <p style="margin-top: 4px; font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+                            This action will immediately close <strong id="square-off-pos-count" style="color: var(--text-primary);">0</strong> open position(s) at current market mark price and cancel all active SL/TP/OCO orders on Binance.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="square-off-preview-list" id="square-off-preview-list">
+                    <!-- Position previews injected dynamically -->
+                </div>
+
+                <div class="trade-actions" style="margin-top: 10px;">
+                    <button class="btn btn-outline" id="btn-cancel-square-off">Cancel</button>
+                    <button class="btn btn-action-panic" id="btn-confirm-square-off-all" style="flex: 2; padding: 12px 20px;">
+                        ⚡ Liquidate All Positions
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="js/api.js"></script>
     <script src="js/chart.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
+

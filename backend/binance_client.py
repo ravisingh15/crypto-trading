@@ -4,12 +4,15 @@ import hashlib
 import requests
 from urllib.parse import urlencode
 from typing import List, Dict, Any, Optional
-from backend.config import API_KEY, SECRET_KEY, BINANCE_BASE_URL, BINANCE_DATA_URL, BINANCE_FUTURES_URL
+from backend.config import (
+    API_KEY, SECRET_KEY, BINANCE_BASE_URL, BINANCE_DATA_URL, BINANCE_FUTURES_URL,
+    STOCK_METADATA, TOP_STOCK_PAIRS
+)
 
 class BinanceClient:
     """
     Robust Binance REST API client supporting public market data queries 
-    and HMAC SHA-256 signed private endpoints.
+    and HMAC SHA-256 signed private endpoints for both Crypto & US Stock bStocks.
     """
 
     def __init__(self, api_key: str = API_KEY, secret_key: str = SECRET_KEY):
@@ -23,6 +26,64 @@ class BinanceClient:
                 "X-MBX-APIKEY": self.api_key,
                 "Content-Type": "application/json"
             })
+
+    def resolve_symbol(self, symbol: str) -> str:
+        """
+        Intelligently resolves human-readable tickers and stock symbols.
+        E.g.:
+          'TSLA' -> 'TSLABUSDT'
+          'NVDA' -> 'NVDABUSDT'
+          'AAPL' -> 'AAPLBUSDT'
+          'TSLABUSDT' -> 'TSLABUSDT'
+          'BTC' -> 'BTCUSDT'
+          'BTCUSDT' -> 'BTCUSDT'
+        """
+        clean = symbol.strip().upper()
+        # Direct match in stock metadata
+        if clean in STOCK_METADATA:
+            return STOCK_METADATA[clean]["symbol"]
+        
+        # Suffix matching for bStocks
+        if clean.endswith("BUSDT"):
+            return clean
+        if clean.endswith("USDT"):
+            return clean
+            
+        # Try appending BUSDT for stock ticker or USDT for crypto
+        if f"{clean}B" in [k + "B" for k in STOCK_METADATA]:
+            return f"{clean}BUSDT"
+            
+        return f"{clean}USDT"
+
+    def is_stock_symbol(self, symbol: str) -> bool:
+        """Check if a symbol represents a US Stock / bStock."""
+        sym = symbol.upper()
+        if sym in TOP_STOCK_PAIRS:
+            return True
+        for ticker, meta in STOCK_METADATA.items():
+            if sym == meta["symbol"] or sym == ticker:
+                return True
+        # Check standard bStock naming pattern (ends with BUSDT with length >= 6 and not crypto like BNBUSDT)
+        if sym.endswith("BUSDT") and sym not in ["BNBUSDT", "ARBUSDT", "SHIBUSDT", "TRBUSDT", "CKBUSDT", "DGBUSDT"]:
+            return True
+        return False
+
+    def get_stock_metadata(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Retrieve company name, sector, and ticker for a stock symbol."""
+        sym = symbol.upper()
+        for ticker, meta in STOCK_METADATA.items():
+            if sym == meta["symbol"] or sym == ticker:
+                return meta
+        # Generate inferred metadata for other bStocks
+        if sym.endswith("BUSDT"):
+            base_ticker = sym[:-5]  # remove BUSDT
+            return {
+                "symbol": sym,
+                "name": f"{base_ticker} (bStock)",
+                "sector": "US Equities & ETFs",
+                "ticker": base_ticker
+            }
+        return None
 
     def _request(self, method: str, path: str, params: Optional[Dict[str, Any]] = None, signed: bool = False) -> Any:
         params = params or {}
@@ -73,27 +134,73 @@ class BinanceClient:
             return data
         return [data]
 
-    def get_usdt_tickers(self) -> List[Dict[str, Any]]:
-        """Fetch 24h tickers filtered for active USDT pairs."""
+    def get_stock_tickers(self) -> List[Dict[str, Any]]:
+        """Fetch 24h tickers specifically for US Stocks / bStocks."""
         all_tickers = self.get_24h_tickers()
-        usdt_tickers = [
-            t for t in all_tickers 
-            if t.get("symbol", "").endswith("USDT") 
-            and not t.get("symbol", "").startswith("UP") 
-            and not t.get("symbol", "").startswith("DOWN")
-            and float(t.get("quoteVolume", 0)) > 500000  # Filter out illiquid pairs (> $500k volume)
-        ]
-        return usdt_tickers
+        stock_tickers = []
+        for t in all_tickers:
+            sym = t.get("symbol", "")
+            if self.is_stock_symbol(sym):
+                meta = self.get_stock_metadata(sym)
+                t_copy = dict(t)
+                t_copy["asset_class"] = "STOCK"
+                t_copy["company_name"] = meta["name"] if meta else sym
+                t_copy["stock_ticker"] = meta["ticker"] if meta else sym.replace("BUSDT", "")
+                t_copy["sector"] = meta["sector"] if meta else "US Equities & ETFs"
+                stock_tickers.append(t_copy)
+        return stock_tickers
+
+    def get_usdt_tickers(self, asset_class: str = "ALL") -> List[Dict[str, Any]]:
+        """
+        Fetch 24h tickers filtered for active USDT pairs.
+        asset_class: 'ALL', 'CRYPTO', or 'STOCKS'
+        """
+        all_tickers = self.get_24h_tickers()
+        filtered_tickers = []
+        for t in all_tickers:
+            sym = t.get("symbol", "")
+            if not sym.endswith("USDT") or sym.startswith("UP") or sym.startswith("DOWN"):
+                continue
+
+            vol = float(t.get("quoteVolume", 0))
+            is_stock = self.is_stock_symbol(sym)
+
+            # Stocks might have lower quote volume initially than top crypto, so lower threshold for stocks
+            min_vol = 50000 if is_stock else 500000
+            if vol < min_vol:
+                continue
+
+            if asset_class == "CRYPTO" and is_stock:
+                continue
+            if asset_class == "STOCKS" and not is_stock:
+                continue
+
+            t_copy = dict(t)
+            if is_stock:
+                meta = self.get_stock_metadata(sym)
+                t_copy["asset_class"] = "STOCK"
+                t_copy["company_name"] = meta["name"] if meta else sym
+                t_copy["stock_ticker"] = meta["ticker"] if meta else sym.replace("BUSDT", "")
+                t_copy["sector"] = meta["sector"] if meta else "US Equities & ETFs"
+            else:
+                t_copy["asset_class"] = "CRYPTO"
+                t_copy["company_name"] = sym.replace("USDT", "")
+                t_copy["stock_ticker"] = sym.replace("USDT", "")
+                t_copy["sector"] = "Crypto"
+
+            filtered_tickers.append(t_copy)
+
+        return filtered_tickers
 
     def get_klines(self, symbol: str, interval: str = "1h", limit: int = 100,
                     startTime: Optional[int] = None, endTime: Optional[int] = None) -> List[List[Any]]:
         """
-        Fetch OHLCV kline/candlestick data for a symbol.
+        Fetch OHLCV kline/candlestick data for a symbol (supports stock tickers like 'TSLA' or 'TSLABUSDT').
         Intervals: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w
-        startTime/endTime: optional Unix timestamps in milliseconds for pagination
         """
+        resolved = self.resolve_symbol(symbol)
         params = {
-            "symbol": symbol.upper(),
+            "symbol": resolved,
             "interval": interval,
             "limit": limit
         }
@@ -105,7 +212,8 @@ class BinanceClient:
 
     def get_order_book(self, symbol: str, limit: int = 20) -> Dict[str, Any]:
         """Fetch current order book depth for a symbol."""
-        params = {"symbol": symbol.upper(), "limit": limit}
+        resolved = self.resolve_symbol(symbol)
+        params = {"symbol": resolved, "limit": limit}
         return self._request("GET", "/api/v3/depth", params=params)
 
     def get_account_info(self) -> Dict[str, Any]:
@@ -114,14 +222,16 @@ class BinanceClient:
 
     def get_symbol_exchange_info(self, symbol: str) -> Dict[str, Any]:
         """Fetch trading rules (lot size, tick size, min notional) for a symbol."""
-        data = self._request("GET", "/api/v3/exchangeInfo", params={"symbol": symbol.upper()})
+        resolved = self.resolve_symbol(symbol)
+        data = self._request("GET", "/api/v3/exchangeInfo", params={"symbol": resolved})
         if data and "symbols" in data and len(data["symbols"]) > 0:
             return data["symbols"][0]
-        raise ValueError(f"No exchange info found for {symbol}")
+        raise ValueError(f"No exchange info found for {symbol} ({resolved})")
 
     def get_symbol_price(self, symbol: str) -> float:
         """Fetch current market price for a symbol."""
-        data = self._request("GET", "/api/v3/ticker/price", params={"symbol": symbol.upper()})
+        resolved = self.resolve_symbol(symbol)
+        data = self._request("GET", "/api/v3/ticker/price", params={"symbol": resolved})
         return float(data.get("price", 0))
 
     def place_market_order(self, symbol: str, side: str, quantity: float) -> Dict[str, Any]:
@@ -130,13 +240,15 @@ class BinanceClient:
         side: 'BUY' or 'SELL'
         quantity: amount of base asset
         """
+        resolved = self.resolve_symbol(symbol)
         params = {
-            "symbol": symbol.upper(),
+            "symbol": resolved,
             "side": side.upper(),
             "type": "MARKET",
             "quantity": quantity,
         }
         return self._request("POST", "/api/v3/order", params=params, signed=True)
+
 
     def place_limit_order(self, symbol: str, side: str, quantity: float, price: float,
                           time_in_force: str = "GTC") -> Dict[str, Any]:
@@ -145,8 +257,9 @@ class BinanceClient:
         side: 'BUY' or 'SELL'
         time_in_force: GTC (Good Til Cancel), IOC, FOK
         """
+        resolved = self.resolve_symbol(symbol)
         params = {
-            "symbol": symbol.upper(),
+            "symbol": resolved,
             "side": side.upper(),
             "type": "LIMIT",
             "timeInForce": time_in_force,
@@ -161,11 +274,12 @@ class BinanceClient:
         Place a STOP_LOSS_LIMIT order (used for SL after entry).
         For a LONG trade SL: side='SELL', stopPrice = SL level.
         """
+        resolved = self.resolve_symbol(symbol)
         # Use stop price as limit price with small buffer for fills
         buffer = 0.001 if side.upper() == "SELL" else -0.001
         limit_price = stop_price * (1 + buffer)
         params = {
-            "symbol": symbol.upper(),
+            "symbol": resolved,
             "side": side.upper(),
             "type": "STOP_LOSS_LIMIT",
             "timeInForce": "GTC",
@@ -181,10 +295,11 @@ class BinanceClient:
         Place a TAKE_PROFIT_LIMIT order (used for TP after entry).
         For a LONG trade TP: side='SELL', stopPrice = TP level.
         """
+        resolved = self.resolve_symbol(symbol)
         buffer = -0.001 if side.upper() == "SELL" else 0.001
         limit_price = stop_price * (1 + buffer)
         params = {
-            "symbol": symbol.upper(),
+            "symbol": resolved,
             "side": side.upper(),
             "type": "TAKE_PROFIT_LIMIT",
             "timeInForce": "GTC",
@@ -200,8 +315,9 @@ class BinanceClient:
         Place an OCO (One-Cancels-the-Other) order — combined TP + SL.
         For LONG exit: side='SELL', price=TP level, stopPrice=SL trigger, stopLimitPrice=SL limit.
         """
+        resolved = self.resolve_symbol(symbol)
         params = {
-            "symbol": symbol.upper(),
+            "symbol": resolved,
             "side": side.upper(),
             "quantity": quantity,
             "price": price,                     # Take-profit limit price
@@ -215,16 +331,18 @@ class BinanceClient:
         """Fetch open orders. If symbol is None, returns all open orders."""
         params = {}
         if symbol:
-            params["symbol"] = symbol.upper()
+            params["symbol"] = self.resolve_symbol(symbol)
         return self._request("GET", "/api/v3/openOrders", params=params, signed=True)
 
     def cancel_order(self, symbol: str, order_id: int) -> Dict[str, Any]:
         """Cancel a specific open order by orderId."""
+        resolved = self.resolve_symbol(symbol)
         params = {
-            "symbol": symbol.upper(),
+            "symbol": resolved,
             "orderId": order_id,
         }
         return self._request("DELETE", "/api/v3/order", params=params, signed=True)
+
 
     # ==========================================================================
     # FUTURES API METHODS
@@ -259,6 +377,27 @@ class BinanceClient:
             raise
         except Exception as e:
             raise RuntimeError(f"Futures API request failed: {str(e)}")
+
+    def futures_get_24h_tickers(self) -> List[Dict[str, Any]]:
+        """Fetch 24-hour price change statistics for all Futures contracts."""
+        data = self._futures_request("GET", "/fapi/v1/ticker/24hr")
+        if isinstance(data, list):
+            return data
+        return [data]
+
+    def futures_get_klines(self, symbol: str, interval: str = "5m", limit: int = 30,
+                           startTime: Optional[int] = None, endTime: Optional[int] = None) -> List[List[Any]]:
+        """Fetch OHLCV candlestick data for a Futures symbol."""
+        params: Dict[str, Any] = {
+            "symbol": symbol.upper(),
+            "interval": interval,
+            "limit": limit
+        }
+        if startTime is not None:
+            params["startTime"] = startTime
+        if endTime is not None:
+            params["endTime"] = endTime
+        return self._futures_request("GET", "/fapi/v1/klines", params=params)
 
     def futures_get_exchange_info(self, symbol: str) -> Dict[str, Any]:
         """Fetch trading rules for a Futures symbol."""

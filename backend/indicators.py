@@ -169,12 +169,15 @@ def calculate_supertrend(high: pd.Series, low: pd.Series, close: pd.Series, peri
         "direction": pd.Series(direction, index=close.index)
     }
 
-def detect_rsi_divergence(close: pd.Series, rsi: pd.Series, lookback: int = 20) -> Dict[str, pd.Series]:
+def detect_rsi_divergence(close: pd.Series, rsi: pd.Series, lookback: int = 20, max_recency: int = 2) -> Dict[str, pd.Series]:
     """
     Detect RSI divergences (bullish and bearish) using swing point analysis.
 
     Bullish divergence: price makes lower low, RSI makes higher low
     Bearish divergence: price makes higher high, RSI makes lower high
+
+    max_recency: maximum number of bars since the most recent swing point formed
+                 to prevent firing stale signals long after the reversal.
 
     Returns dict with 'bull_divergence' and 'bear_divergence' boolean Series.
     """
@@ -202,8 +205,10 @@ def detect_rsi_divergence(close: pd.Series, rsi: pd.Series, lookback: int = 20) 
         if len(lows) >= 2:
             prev_low = lows[-2]
             curr_low = lows[-1]
-            # Bullish divergence: price lower low, RSI higher low
-            if (curr_low[1] < prev_low[1] and
+            # Freshness check: curr_low must have occurred within max_recency bars
+            is_fresh = (len(window_close) - 1 - curr_low[0]) <= max_recency
+            if (is_fresh and
+                curr_low[1] < prev_low[1] and
                 not np.isnan(curr_low[2]) and not np.isnan(prev_low[2]) and
                 curr_low[2] > prev_low[2]):
                 bull_div.iloc[i] = True
@@ -217,8 +222,10 @@ def detect_rsi_divergence(close: pd.Series, rsi: pd.Series, lookback: int = 20) 
         if len(highs) >= 2:
             prev_high = highs[-2]
             curr_high = highs[-1]
-            # Bearish divergence: price higher high, RSI lower high
-            if (curr_high[1] > prev_high[1] and
+            # Freshness check: curr_high must have occurred within max_recency bars
+            is_fresh = (len(window_close) - 1 - curr_high[0]) <= max_recency
+            if (is_fresh and
+                curr_high[1] > prev_high[1] and
                 not np.isnan(curr_high[2]) and not np.isnan(prev_high[2]) and
                 curr_high[2] < prev_high[2]):
                 bear_div.iloc[i] = True
@@ -310,6 +317,10 @@ def enrich_klines_dataframe(raw_klines: List[List[Any]]) -> pd.DataFrame:
     div = detect_rsi_divergence(df["close"], df["rsi"], lookback=20)
     df["bull_divergence"] = div["bull_divergence"]
     df["bear_divergence"] = div["bear_divergence"]
+
+    # Market Regime Classification (BULL_TREND, BEAR_TREND, BULL_RANGE, BEAR_RANGE)
+    from backend.regime import classify_regime
+    df = classify_regime(df)
 
     return df
 

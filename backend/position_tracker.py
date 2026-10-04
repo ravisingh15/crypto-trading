@@ -443,6 +443,190 @@ class PositionTracker:
                     pass
 
     # ==========================================================================
+    # SQUARE OFF & TRAILING STOPS
+    # ==========================================================================
+
+    def square_off_position(self, symbol: str, reason: str = "MANUAL_SQUARE_OFF") -> Optional[Dict[str, Any]]:
+        """
+        Immediately liquidate/square-off an open position at current market price.
+        Cancels associated open SL/TP/OCO orders on Binance or clears paper trade.
+        """
+        symbol_upper = symbol.upper()
+        pos = self.get_position(symbol_upper)
+        if not pos:
+            return None
+
+        paper = pos.get("paper", False)
+        m_type = pos.get("market_type", "futures")
+        side = pos.get("side", "BUY")
+        qty = pos.get("quantity", 0)
+        entry = pos.get("entry_price", 0)
+
+        # Get latest market/mark price
+        try:
+            current_price = self._get_price(symbol_upper, m_type)
+        except Exception:
+            current_price = entry
+
+        if current_price <= 0:
+            current_price = entry
+
+        # Execute market close if LIVE
+        if not paper:
+            try:
+                if m_type == "futures":
+                    # Cancel all open orders for this symbol first
+                    try:
+                        binance_client.futures_cancel_all_orders(symbol_upper)
+                    except Exception as e:
+                        print(f"  [PositionTracker] Warning: cancel all futures orders failed: {e}")
+
+                    # Opposite side for market liquidation
+                    exit_side = "SELL" if side == "BUY" else "BUY"
+                    binance_client.futures_place_market_order(symbol_upper, exit_side, qty)
+                else:  # spot
+                    if pos.get("order_id") or pos.get("oco_id"):
+                        try:
+                            binance_client.cancel_order(symbol_upper, pos.get("order_id"))
+                        except Exception:
+                            pass
+                    if side == "BUY":
+                        binance_client.place_market_order(symbol_upper, "SELL", qty)
+            except Exception as e:
+                print(f"  [PositionTracker] Error executing live square-off for {symbol_upper}: {e}")
+
+        # Compute realized P&L
+        if side == "BUY":
+            pnl = (current_price - entry) * qty
+        else:
+            pnl = (entry - current_price) * qty
+
+        # Remove from tracking & persist
+        removed = self.remove_position(symbol_upper)
+        if removed:
+            removed["exit_type"] = reason
+            removed["pnl"] = round(pnl, 4)
+            removed["exit_price"] = current_price
+            removed["closed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            return removed
+
+        return None
+
+    def square_off_all(self, reason: str = "SQUARE_OFF_ALL") -> List[Dict[str, Any]]:
+        """
+        Square off all open positions immediately and cancel all open orders.
+        Returns list of all squared off positions with realized P&L.
+        """
+        closed = []
+        positions = self.get_open_positions()
+        for pos in positions:
+            symbol = pos["symbol"]
+            res = self.square_off_position(symbol, reason=reason)
+            if res:
+                closed.append(res)
+        return closed
+
+    def update_trailing_stops(self, callback_pct: float = 1.5, breakeven_enabled: bool = True, breakeven_r_mult: float = 1.0) -> List[Dict[str, Any]]:
+        """
+        Update trailing stops for open positions.
+        When in profit, ratchets trailing_sl higher (for BUY) or lower (for SELL).
+        If breakeven_enabled is True and profit reaches breakeven_r_mult * risk_dist,
+        moves SL to entry (plus small fee buffer) to lock in a risk-free position.
+        Returns list of positions where trailing SL was updated.
+        """
+        updated = []
+        positions = self.get_open_positions()
+        for pos in positions:
+            symbol = pos["symbol"]
+            side = pos["side"]
+            entry = pos["entry_price"]
+            m_type = pos.get("market_type", "futures")
+            initial_sl = pos.get("stop_loss", 0)
+            risk_dist = abs(entry - initial_sl) if initial_sl > 0 else 0
+
+            try:
+                current_price = self._get_price(symbol, m_type)
+            except Exception:
+                continue
+
+            if current_price <= 0:
+                continue
+
+            highest = pos.get("highest_price") or entry
+            lowest = pos.get("lowest_price") or entry
+            old_sl = pos.get("trailing_sl") or pos["stop_loss"]
+            current_sl = old_sl
+            updated_type = None
+
+            if side == "BUY":
+                if current_price > highest:
+                    highest = current_price
+                    self.update_position(symbol, {"highest_price": highest})
+
+                # 1. Breakeven Stop check: if highest reached >= breakeven_r_mult * risk_dist, ratchet to breakeven
+                if breakeven_enabled and risk_dist > 0 and highest >= (entry + (breakeven_r_mult * risk_dist)):
+                    be_sl = round(entry * 1.0005, 6)
+                    if be_sl > current_sl:
+                        current_sl = be_sl
+                        updated_type = "BREAKEVEN"
+
+                # 2. Dynamic Trailing Stop check: ratchets based on callback %
+                if highest > entry * 1.005:
+                    new_trailing_sl = round(highest * (1 - (callback_pct / 100)), 6)
+                    if new_trailing_sl > current_sl:
+                        current_sl = new_trailing_sl
+                        updated_type = "TRAILING"
+
+                if current_sl > old_sl:
+                    self.update_position(symbol, {
+                        "trailing_sl": current_sl,
+                        "at_breakeven": (updated_type == "BREAKEVEN" or pos.get("at_breakeven", False))
+                    })
+                    updated.append({
+                        "symbol": symbol,
+                        "side": side,
+                        "old_sl": old_sl,
+                        "new_sl": current_sl,
+                        "highest": highest,
+                        "type": updated_type or "TRAILING",
+                    })
+
+            else:  # SHORT
+                if current_price < lowest:
+                    lowest = current_price
+                    self.update_position(symbol, {"lowest_price": lowest})
+
+                # 1. Breakeven Stop check: if lowest reached <= entry - (breakeven_r_mult * risk_dist)
+                if breakeven_enabled and risk_dist > 0 and lowest <= (entry - (breakeven_r_mult * risk_dist)):
+                    be_sl = round(entry * 0.9995, 6)
+                    if be_sl < current_sl:
+                        current_sl = be_sl
+                        updated_type = "BREAKEVEN"
+
+                # 2. Dynamic Trailing Stop check
+                if lowest < entry * 0.995:
+                    new_trailing_sl = round(lowest * (1 + (callback_pct / 100)), 6)
+                    if new_trailing_sl < current_sl:
+                        current_sl = new_trailing_sl
+                        updated_type = "TRAILING"
+
+                if current_sl < old_sl:
+                    self.update_position(symbol, {
+                        "trailing_sl": current_sl,
+                        "at_breakeven": (updated_type == "BREAKEVEN" or pos.get("at_breakeven", False))
+                    })
+                    updated.append({
+                        "symbol": symbol,
+                        "side": side,
+                        "old_sl": old_sl,
+                        "new_sl": current_sl,
+                        "lowest": lowest,
+                        "type": updated_type or "TRAILING",
+                    })
+
+        return updated
+
+    # ==========================================================================
     # SERIALIZATION
     # ==========================================================================
 
