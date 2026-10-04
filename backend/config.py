@@ -13,9 +13,15 @@ load_dotenv(dotenv_path=env_path)
 API_KEY = os.getenv("API_KEY", "")
 SECRET_KEY = os.getenv("SECRET_KEY", "")
 
-HOST = os.getenv("HOST", "127.0.0.1")
+# Server Configuration
+HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
-DEBUG = os.getenv("DEBUG", "True").lower() == "true"
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+
+# Private Access Authentication (Leave blank for open access; set to require login)
+DASHBOARD_USERNAME = os.getenv("DASHBOARD_USERNAME", "admin")
+DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")
+SCREENER_ONLY_MODE = os.getenv("SCREENER_ONLY_MODE", "false").lower() in ("true", "1", "yes")
 
 # Binance REST endpoints with fallback
 BINANCE_BASE_URL = os.getenv("BINANCE_BASE_URL", "https://api.binance.com")

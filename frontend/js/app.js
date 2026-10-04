@@ -90,6 +90,180 @@ document.addEventListener("DOMContentLoaded", () => {
     calcAccount.addEventListener("input", updateRiskCalculator);
     calcRisk.addEventListener("input", updateRiskCalculator);
 
+    // ----------------------------------------------------
+    // Production Audio Synthesizer (Web Audio API)
+    // ----------------------------------------------------
+    class SoundEffects {
+        constructor() {
+            this.enabled = localStorage.getItem('cypher_sound_enabled') === 'true';
+            this.ctx = null;
+        }
+        _initCtx() {
+            if (!this.ctx && (window.AudioContext || window.webkitAudioContext)) {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioCtx();
+            }
+            if (this.ctx && this.ctx.state === 'suspended') {
+                this.ctx.resume();
+            }
+        }
+        playTone(freq = 600, duration = 0.08, type = 'sine') {
+            if (!this.enabled) return;
+            try {
+                this._initCtx();
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.03, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + duration);
+            } catch (e) {}
+        }
+        playChime() {
+            if (!this.enabled) return;
+            this.playTone(523.25, 0.08, 'triangle');
+            setTimeout(() => this.playTone(659.25, 0.08, 'triangle'), 70);
+            setTimeout(() => this.playTone(783.99, 0.14, 'triangle'), 140);
+        }
+        toggle() {
+            this.enabled = !this.enabled;
+            localStorage.setItem('cypher_sound_enabled', this.enabled);
+            return this.enabled;
+        }
+    }
+    const soundEffects = new SoundEffects();
+
+    // ----------------------------------------------------
+    // Toast Notification System
+    // ----------------------------------------------------
+    function showToast(message, type = 'info', icon = '⚡') {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.innerHTML = `<span class="toast-icon">${icon}</span><span>${message}</span>`;
+        container.appendChild(toast);
+        soundEffects.playTone(520, 0.05);
+        setTimeout(() => toast.classList.add('visible'), 10);
+        setTimeout(() => {
+            toast.classList.remove('visible');
+            setTimeout(() => toast.remove(), 300);
+        }, 2600);
+    }
+
+    // ----------------------------------------------------
+    // Binance Trading Link Generator
+    // ----------------------------------------------------
+    function getBinanceTradeUrl(symbol, isFutures = false) {
+        if (!symbol) return "https://www.binance.com";
+        const sym = symbol.toUpperCase();
+        if (isFutures) {
+            return `https://www.binance.com/en/futures/${sym}`;
+        }
+        if (sym.endsWith("BUSDT")) {
+            return `https://www.binance.com/en/trade/${sym.replace('BUSDT', 'B_USDT')}?type=spot`;
+        }
+        return `https://www.binance.com/en/trade/${sym.replace('USDT', '_USDT')}?type=spot`;
+    }
+
+    // ----------------------------------------------------
+    // Watchlist Persistence (LocalStorage)
+    // ----------------------------------------------------
+    function getWatchlist() {
+        try {
+            return JSON.parse(localStorage.getItem('cypher_watchlist') || '[]');
+        } catch (e) {
+            return [];
+        }
+    }
+    function isWatchlisted(symbol) {
+        return getWatchlist().includes(symbol);
+    }
+    function toggleWatchlist(symbol) {
+        let list = getWatchlist();
+        let added = false;
+        if (list.includes(symbol)) {
+            list = list.filter(s => s !== symbol);
+            showToast(`Removed <strong>${symbol}</strong> from Watchlist`, 'info', '⭐');
+        } else {
+            list.push(symbol);
+            added = true;
+            soundEffects.playChime();
+            showToast(`Added <strong>${symbol}</strong> to Watchlist`, 'success', '⭐');
+        }
+        localStorage.setItem('cypher_watchlist', JSON.stringify(list));
+        updateWatchlistCount();
+        renderTable();
+        return added;
+    }
+    function updateWatchlistCount() {
+        const countEl = document.getElementById('watchlist-count');
+        if (countEl) countEl.textContent = getWatchlist().length;
+    }
+    updateWatchlistCount();
+
+    // ----------------------------------------------------
+    // Quick Presets Filter State & Listeners
+    // ----------------------------------------------------
+    let currentPreset = "ALL";
+    document.querySelectorAll(".preset-chip").forEach(chip => {
+        chip.addEventListener("click", () => {
+            document.querySelectorAll(".preset-chip").forEach(c => c.classList.remove("active"));
+            chip.classList.add("active");
+            currentPreset = chip.dataset.preset || "ALL";
+            soundEffects.playTone(600, 0.04);
+            renderTable();
+        });
+    });
+
+    // ----------------------------------------------------
+    // Header Controls: Sound, Fullscreen, Latency
+    // ----------------------------------------------------
+    const btnSoundToggle = document.getElementById("btn-sound-toggle");
+    const soundIcon = document.getElementById("sound-icon");
+    if (btnSoundToggle && soundIcon) {
+        if (!soundEffects.enabled) {
+            btnSoundToggle.classList.add("muted");
+            soundIcon.textContent = "🔕";
+        }
+        btnSoundToggle.addEventListener("click", () => {
+            const enabled = soundEffects.toggle();
+            soundIcon.textContent = enabled ? "🔔" : "🔕";
+            btnSoundToggle.classList.toggle("muted", !enabled);
+            showToast(`Audio alerts ${enabled ? 'enabled' : 'muted'}`, 'info', enabled ? '🔔' : '🔕');
+            if (enabled) soundEffects.playChime();
+        });
+    }
+
+    const btnFullscreenToggle = document.getElementById("btn-fullscreen-toggle");
+    if (btnFullscreenToggle) {
+        btnFullscreenToggle.addEventListener("click", () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else if (document.exitFullscreen) {
+                document.exitFullscreen().catch(() => {});
+            }
+        });
+    }
+
+    // Latency Ping Listener
+    const latencyVal = document.getElementById("latency-val");
+    const latencyBadge = document.getElementById("latency-badge");
+    window.addEventListener("api-latency", (e) => {
+        if (!latencyVal) return;
+        const ms = e.detail.latency;
+        latencyVal.textContent = `${ms} ms`;
+        const dot = latencyBadge?.querySelector(".latency-dot");
+        if (dot) {
+            dot.className = `latency-dot ${ms > 500 ? 'high' : ms > 150 ? 'medium' : ''}`;
+        }
+    });
+
     // Sort Headers Click Listener
     document.querySelectorAll("th.sortable").forEach(th => {
         th.addEventListener("click", () => {
@@ -298,12 +472,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderTable() {
         if (!currentScreenerData || currentScreenerData.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="11" style="text-align:center;">No assets matched the filter criteria.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="13" style="text-align:center;">No assets matched the filter criteria.</td></tr>`;
             recordsCount.textContent = "0 Pairs";
             return;
         }
 
         let filtered = [...currentScreenerData];
+
+        // Quick Preset Filter
+        if (currentPreset === "WATCHLIST") {
+            const watchlist = getWatchlist();
+            filtered = filtered.filter(item => watchlist.includes(item.symbol));
+        } else if (currentPreset === "STRONG_BUY") {
+            filtered = filtered.filter(item => item.recommendation === "STRONG BUY");
+        } else if (currentPreset === "TOP_GAINERS") {
+            filtered = filtered.filter(item => item.price_change_24h >= 4.0);
+        } else if (currentPreset === "OVERSOLD") {
+            filtered = filtered.filter(item => item.rsi < 35);
+        } else if (currentPreset === "OVERBOUGHT") {
+            filtered = filtered.filter(item => item.rsi > 68);
+        } else if (currentPreset === "RVOL_SPIKE") {
+            filtered = filtered.filter(item => item.rvol >= 2.0);
+        } else if (currentPreset === "ALPHA_LEADERS") {
+            filtered = filtered.filter(item => item.rs_status === "ALPHA_LEADER" || (item.rs_rating && item.rs_rating >= 80));
+        }
 
         // Search Filter (matches symbol, stock ticker, or company name)
         const query = searchInput.value.trim().toUpperCase();
@@ -343,6 +535,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
         recordsCount.textContent = `Showing ${filtered.length} Pairs`;
 
+        if (filtered.length === 0 && currentPreset === "WATCHLIST") {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="13" style="text-align:center; padding: 36px 16px; color: var(--text-muted);">
+                        <div style="font-size: 24px; margin-bottom: 8px;">⭐</div>
+                        <strong style="color: var(--text-primary); font-size: 14px;">Your Watchlist is Empty</strong>
+                        <p style="margin-top: 4px; font-size: 12px;">Click the star icon (★) in the first column of any pair to pin it here.</p>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
         tableBody.innerHTML = filtered.map(item => {
             const priceChangeClass = item.price_change_24h >= 0 ? "positive" : "negative";
             const priceChangeSign = item.price_change_24h >= 0 ? "+" : "";
@@ -363,6 +568,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const assetBadgeText = isStock ? "US STOCK" : "CRYPTO";
             const displayName = item.stock_ticker || item.symbol.replace("USDT", "");
             const companySub = item.company_name && item.company_name !== displayName ? item.company_name : item.symbol;
+            const isStarred = isWatchlisted(item.symbol);
+            const binanceUrl = getBinanceTradeUrl(item.symbol, false);
 
             // RS Alpha Badge
             let rsBadgeClass = "badge-rs-neutral";
@@ -381,10 +588,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
             return `
                 <tr>
+                    <td style="text-align:center;">
+                        <button class="btn-star ${isStarred ? 'starred' : ''}" data-symbol="${item.symbol}" title="${isStarred ? 'Remove from Watchlist' : 'Add to Watchlist'}">
+                            ★
+                        </button>
+                    </td>
                     <td>
                         <div class="symbol-col-wrap">
                             <div class="symbol-main-row">
                                 <strong>${displayName}</strong>
+                                <button class="btn-copy-ticker" data-symbol="${item.symbol}" title="Copy ${item.symbol} to clipboard">📋</button>
                                 <span class="badge-asset ${assetBadgeClass}">${assetBadgeText}</span>
                             </div>
                             <span class="company-subtext" title="${companySub}">${companySub}</span>
@@ -393,20 +606,68 @@ document.addEventListener("DOMContentLoaded", () => {
                     <td><span class="badge badge-neutral">${item.category}</span></td>
                     <td style="font-family: monospace;">$${item.price < 1 ? item.price : item.price.toLocaleString()}</td>
                     <td class="${priceChangeClass}">${priceChangeSign}${item.price_change_24h}%</td>
-                    <td class="${rsiClass}">${item.rsi}</td>
+                    <td>
+                        <div class="rsi-visual-cell">
+                            <div class="rsi-num-row">
+                                <span class="${rsiClass}"><strong>${item.rsi}</strong></span>
+                                <span style="font-size:9px; color:var(--text-muted);">${item.rsi < 30 ? 'OS' : item.rsi > 70 ? 'OB' : ''}</span>
+                            </div>
+                            <div class="rsi-mini-track">
+                                <div class="rsi-mini-fill ${item.rsi < 35 ? 'oversold' : item.rsi > 68 ? 'overbought' : 'neutral'}" style="width: ${Math.min(100, Math.max(0, item.rsi))}%;"></div>
+                            </div>
+                        </div>
+                    </td>
                     <td style="font-family: monospace;" class="${item.macd_hist >= 0 ? 'positive' : 'negative'}">${item.macd_hist}</td>
-                    <td>${item.rvol}x</td>
+                    <td>${item.rvol >= 2.0 ? `<span class="rvol-badge-hot">🔥 ${item.rvol}x</span>` : `${item.rvol}x`}</td>
                     <td><span class="badge-rs ${rsBadgeClass}">${rsIcon} ${rsRating}</span></td>
                     <td style="font-family: monospace;">$${volFormatted}</td>
-                    <td><strong>${item.score}</strong></td>
+                    <td>
+                        <div class="score-visual-cell">
+                            <div class="rsi-num-row">
+                                <strong style="color:${item.score > 20 ? 'var(--green-bull)' : item.score < -20 ? 'var(--red-bear)' : 'var(--text-primary)'};">${item.score > 0 ? '+' : ''}${item.score}</strong>
+                            </div>
+                            <div class="score-mini-track">
+                                <div class="score-mini-fill ${item.score >= 0 ? 'bullish' : 'bearish'}" style="width: ${Math.min(100, Math.abs(item.score))}%;"></div>
+                            </div>
+                        </div>
+                    </td>
                     <td><span class="badge ${recBadge}">${item.recommendation}</span></td>
                     <td>
-                        <button class="btn btn-outline btn-chart" data-symbol="${item.symbol}">Chart 📈</button>
+                        <div class="table-action-cell">
+                            <button class="btn btn-outline btn-chart" data-symbol="${item.symbol}" title="Open HD Interactive Chart">Chart 📈</button>
+                            <a href="${binanceUrl}" target="_blank" rel="noopener noreferrer" class="btn-binance-link" title="Open on Binance">↗ Binance</a>
+                        </div>
                     </td>
                 </tr>
             `;
         }).join("");
 
+        // Attach Star Toggle Handlers
+        document.querySelectorAll(".btn-star").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const sym = btn.dataset.symbol;
+                toggleWatchlist(sym);
+            });
+        });
+
+        // Attach Copy Ticker Handlers
+        document.querySelectorAll(".btn-copy-ticker").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const sym = btn.dataset.symbol;
+                navigator.clipboard.writeText(sym).then(() => {
+                    const original = btn.innerHTML;
+                    btn.innerHTML = '✓';
+                    btn.classList.add('copied');
+                    showToast(`Copied <strong>${sym}</strong> to clipboard`, 'success', '📋');
+                    setTimeout(() => {
+                        btn.innerHTML = original;
+                        btn.classList.remove('copied');
+                    }, 1500);
+                });
+            });
+        });
 
         // Attach Chart Click Handlers
         document.querySelectorAll(".btn-chart").forEach(btn => {
@@ -440,6 +701,11 @@ document.addEventListener("DOMContentLoaded", () => {
         updateRiskCalculator();
         chartModal.classList.add("active");
         currentActiveTradeSetup = null;
+
+        const modalBinanceLink = document.getElementById("modal-binance-link");
+        if (modalBinanceLink) {
+            modalBinanceLink.href = getBinanceTradeUrl(data.symbol, false);
+        }
 
         // Sync modal timeframe buttons with current screener timeframe
         const timeframe = timeframeSelect.value || "1h";
@@ -508,6 +774,11 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
         `;
 
+        const modalBinanceLink = document.getElementById("modal-binance-link");
+        if (modalBinanceLink) {
+            modalBinanceLink.href = getBinanceTradeUrl(setup.symbol, setup.strategy && setup.strategy.includes('5m'));
+        }
+
         chartModal.classList.add("active");
 
         const timeframe = timeframeSelect.value || "1h";
@@ -522,8 +793,6 @@ document.addEventListener("DOMContentLoaded", () => {
             chartRenderer.render(klineRes.klines, setup.symbol, currentActiveTradeSetup, currentModalTimeframe);
         }
     }
-
-
 
     function closeModal() {
         chartModal.classList.remove("active");
@@ -548,6 +817,21 @@ document.addEventListener("DOMContentLoaded", () => {
         calcPosSize.textContent = `$${positionSizeDollars.toFixed(2)}`;
         calcSlTarget.textContent = `$${stopLossPrice.toFixed(4)} (-${((stopDistance / price) * 100).toFixed(2)}%)`;
         calcTpTarget.textContent = `$${takeProfitPrice.toFixed(4)} (+${(((2 * stopDistance) / price) * 100).toFixed(2)}%)`;
+    }
+
+    const btnCopyCalcLevels = document.getElementById("btn-copy-calc-levels");
+    if (btnCopyCalcLevels) {
+        btnCopyCalcLevels.addEventListener("click", () => {
+            if (!selectedSymbolData) return;
+            const sym = selectedSymbolData.stock_ticker || selectedSymbolData.symbol;
+            const text = `[CYPHERSCREEN] ${sym} | Position Size: ${calcPosSize.textContent} | Stop Loss: ${calcSlTarget.textContent} | Take Profit: ${calcTpTarget.textContent}`;
+            navigator.clipboard.writeText(text).then(() => {
+                const old = btnCopyCalcLevels.innerHTML;
+                btnCopyCalcLevels.innerHTML = '✓ Levels Copied!';
+                showToast(`Copied position sizing levels for <strong>${sym}</strong>`, 'success', '📋');
+                setTimeout(() => { btnCopyCalcLevels.innerHTML = old; }, 1500);
+            });
+        });
     }
 
     // ================================================
@@ -846,13 +1130,29 @@ document.addEventListener("DOMContentLoaded", () => {
                         <button class="btn-view-signal-chart" data-symbol="${sig.symbol}" data-strategy="${sig.strategy}" data-direction="${sig.direction}" data-entry="${sig.entry_price}" data-sl="${sig.stop_loss}" data-tp="${sig.take_profit}" data-asset="${sig.asset_class}" data-company="${companyName}">
                             📈 Chart
                         </button>
-                        <button class="btn-execute-trade" data-symbol="${sig.symbol}" data-strategy="${sig.strategy}" data-direction="${sig.direction}" data-entry="${sig.entry_price}" data-sl="${sig.stop_loss}" data-tp="${sig.take_profit}" data-sl-pct="${sig.sl_distance_pct}" data-tp-pct="${sig.tp_distance_pct}" data-rr="${sig.rr_ratio}">
-                            ⚡ Execute Trade
+                        <button class="btn-copy-setup" data-symbol="${sig.symbol}" data-strategy="${sig.strategy}" data-direction="${sig.direction}" data-entry="${sig.entry_price}" data-sl="${sig.stop_loss}" data-tp="${sig.take_profit}" data-rr="${sig.rr_ratio}" title="Copy complete trade setup">
+                            📋 Copy
                         </button>
+                        <a href="${getBinanceTradeUrl(sig.symbol, false)}" target="_blank" rel="noopener noreferrer" class="btn-binance-link" title="Open on Binance">
+                            ↗ Binance
+                        </a>
                     </div>
                 </div>
             `;
         }).join('');
+
+        // Attach Copy Setup click listeners
+        document.querySelectorAll('#signal-cards-grid .btn-copy-setup').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const text = `[CYPHERSCREEN] ${btn.dataset.symbol} ${btn.dataset.direction} | Strategy: ${btn.dataset.strategy} | Entry: $${btn.dataset.entry} | SL: $${btn.dataset.sl} | TP: $${btn.dataset.tp} | R:R ${btn.dataset.rr}`;
+                navigator.clipboard.writeText(text).then(() => {
+                    const original = btn.innerHTML;
+                    btn.innerHTML = '✓ Copied';
+                    showToast(`Copied <strong>${btn.dataset.symbol}</strong> setup to clipboard`, 'success', '📋');
+                    setTimeout(() => { btn.innerHTML = original; }, 1500);
+                });
+            });
+        });
 
         // Attach View Chart click listeners
         document.querySelectorAll('.btn-view-signal-chart').forEach(btn => {
@@ -1101,21 +1401,29 @@ document.addEventListener("DOMContentLoaded", () => {
                         <button class="btn-delta-chart" data-symbol="${item.symbol}">
                             📈 5m Chart
                         </button>
-                        <button class="btn-delta-trade"
-                            data-symbol="${item.symbol}"
-                            data-direction="${setup.direction}"
-                            data-entry="${setup.entry}"
-                            data-sl="${setup.stop_loss}"
-                            data-tp="${setup.take_profit}"
-                            data-risk-pct="${setup.risk_pct}"
-                            data-reward-pct="${setup.reward_pct}"
-                            data-rr="${setup.rr_ratio}">
-                            ⚡ Quick Scalp (2:1)
+                        <button class="btn-copy-setup" data-symbol="${item.symbol}" data-strategy="5m High Delta Scalp" data-direction="${setup.direction}" data-entry="${setup.entry}" data-sl="${setup.stop_loss}" data-tp="${setup.take_profit}" data-rr="${setup.rr_ratio || '2:1'}" title="Copy scalp levels">
+                            📋 Copy
                         </button>
+                        <a href="${getBinanceTradeUrl(item.symbol, true)}" target="_blank" rel="noopener noreferrer" class="btn-binance-link" title="Open Futures on Binance">
+                            ↗ Futures
+                        </a>
                     </div>
                 </div>
             `;
         }).join('');
+
+        // Attach Copy Setup click listeners for delta cards
+        document.querySelectorAll('#delta-cards-grid .btn-copy-setup').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const text = `[CYPHERSCREEN] ${btn.dataset.symbol} 5m Scalp ${btn.dataset.direction} | Entry: $${btn.dataset.entry} | SL: $${btn.dataset.sl} | TP: $${btn.dataset.tp} | R:R ${btn.dataset.rr}`;
+                navigator.clipboard.writeText(text).then(() => {
+                    const original = btn.innerHTML;
+                    btn.innerHTML = '✓ Copied';
+                    showToast(`Copied <strong>${btn.dataset.symbol}</strong> scalp setup`, 'success', '📋');
+                    setTimeout(() => { btn.innerHTML = original; }, 1500);
+                });
+            });
+        });
 
         // Attach Chart button handlers
         document.querySelectorAll('.btn-delta-chart').forEach(btn => {

@@ -1,12 +1,16 @@
 import os
 from pathlib import Path
 from typing import Any, Optional
-from fastapi import FastAPI, Query, HTTPException, Body
+import base64
+from fastapi import FastAPI, Query, HTTPException, Body, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
-from backend.config import HOST, PORT, DEBUG, BASE_DIR
+from backend.config import (
+    HOST, PORT, DEBUG, BASE_DIR,
+    DASHBOARD_USERNAME, DASHBOARD_PASSWORD, SCREENER_ONLY_MODE
+)
 from backend.binance_client import binance_client
 from backend.indicators import enrich_klines_dataframe
 from backend.screener import screener_engine
@@ -23,6 +27,35 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Optional HTTP Basic Auth for remote single-user access
+@app.middleware("http")
+async def basic_auth_middleware(request: Request, call_next):
+    if DASHBOARD_PASSWORD:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Basic "):
+            return Response(
+                status_code=401,
+                content="Unauthorized: Access to CypherScreen is password protected.",
+                headers={"WWW-Authenticate": 'Basic realm="CypherScreen Screener"'}
+            )
+        try:
+            encoded = auth_header.split(" ", 1)[1]
+            decoded = base64.b64decode(encoded).decode("utf-8")
+            username, _, password = decoded.partition(":")
+            if username != DASHBOARD_USERNAME or password != DASHBOARD_PASSWORD:
+                return Response(
+                    status_code=401,
+                    content="Unauthorized: Invalid credentials.",
+                    headers={"WWW-Authenticate": 'Basic realm="CypherScreen Screener"'}
+                )
+        except Exception:
+            return Response(
+                status_code=401,
+                content="Unauthorized",
+                headers={"WWW-Authenticate": 'Basic realm="CypherScreen Screener"'}
+            )
+    return await call_next(request)
+
 # CORS Configuration
 app.add_middleware(
     CORSMiddleware,
@@ -36,7 +69,21 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "service": "Binance Crypto Screener API"}
+    return {
+        "status": "ok",
+        "service": "Binance Crypto Screener API",
+        "screener_only": SCREENER_ONLY_MODE,
+        "auth_enabled": bool(DASHBOARD_PASSWORD)
+    }
+
+@app.get("/api/config")
+def get_app_config():
+    """Return runtime public configuration for the UI."""
+    return {
+        "screener_only": SCREENER_ONLY_MODE,
+        "has_keys": bool(binance_client.api_key and binance_client.secret_key),
+        "auth_enabled": bool(DASHBOARD_PASSWORD)
+    }
 
 @app.get("/api/market-summary")
 def get_market_summary(asset_class: str = Query("ALL", description="Filter by asset class: ALL, CRYPTO, STOCKS")):
@@ -349,6 +396,12 @@ def place_order(order: OrderRequest):
     User specifies USDT amount — quantity is computed from current price.
     """
     try:
+        if SCREENER_ONLY_MODE:
+            return JSONResponse(
+                status_code=403,
+                content={"error": "Trade execution is disabled. Screener-only mode is active (trades should be placed manually on Binance)."}
+            )
+
         symbol = order.symbol.upper()
         side = order.side.upper()
 

@@ -152,4 +152,23 @@ class TestAPIEndpoints:
         assert r_root.status_code == 200
         assert "CYPHER" in r_root.text or "Screener" in r_root.text
 
+    def test_app_config_endpoint(self, client):
+        r = client.get("/api/config")
+        assert r.status_code == 200
+        data = r.json()
+        assert "screener_only" in data
+        assert "has_keys" in data
+        assert "auth_enabled" in data
+
+    def test_screener_only_blocks_order(self, client):
+        with patch("backend.app.SCREENER_ONLY_MODE", True):
+            r = client.post("/api/order", json={
+                "symbol": "BTCUSDT",
+                "side": "BUY",
+                "amount": 50.0
+            })
+            assert r.status_code == 403
+            assert "Screener-only mode is active" in r.json()["error"]
+
+
 

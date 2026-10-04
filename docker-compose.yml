@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  cypherscreen:
+    build: .
+    container_name: cypherscreen
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - SCREENER_ONLY_MODE=true
+      - DASHBOARD_USERNAME=admin
+      # Set your personal password below or in a .env file to password-protect your web app
+      - DASHBOARD_PASSWORD=

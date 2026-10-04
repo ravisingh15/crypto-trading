@@ -1,12 +1,38 @@
 class CryptoAPI {
     constructor(baseURL = "") {
         this.baseURL = baseURL;
+        this.lastLatency = null;
+    }
+
+    async _fetch(url, options = {}) {
+        const start = performance.now();
+        try {
+            const response = await fetch(url, options);
+            const latency = Math.round(performance.now() - start);
+            this.lastLatency = latency;
+            window.dispatchEvent(new CustomEvent("api-latency", { detail: { latency } }));
+            return response;
+        } catch (err) {
+            const latency = Math.round(performance.now() - start);
+            window.dispatchEvent(new CustomEvent("api-latency", { detail: { latency, error: true } }));
+            throw err;
+        }
+    }
+
+    async getAppConfig() {
+        try {
+            const response = await this._fetch(`${this.baseURL}/api/config`);
+            if (!response.ok) return { screener_only: false };
+            return await response.json();
+        } catch (e) {
+            return { screener_only: false };
+        }
     }
 
     async getMarketSummary(assetClass = "ALL") {
         try {
             const params = new URLSearchParams({ asset_class: assetClass });
-            const response = await fetch(`${this.baseURL}/api/market-summary?${params}`);
+            const response = await this._fetch(`${this.baseURL}/api/market-summary?${params}`);
             if (!response.ok) throw new Error("Failed to fetch market summary");
             return await response.json();
         } catch (error) {
@@ -17,7 +43,7 @@ class CryptoAPI {
 
     async getStocksSummary() {
         try {
-            const response = await fetch(`${this.baseURL}/api/stocks/summary`);
+            const response = await this._fetch(`${this.baseURL}/api/stocks/summary`);
             if (!response.ok) throw new Error("Failed to fetch stocks summary");
             return await response.json();
         } catch (error) {
@@ -28,7 +54,7 @@ class CryptoAPI {
 
     async getMacroSummary() {
         try {
-            const response = await fetch(`${this.baseURL}/api/macro/summary`);
+            const response = await this._fetch(`${this.baseURL}/api/macro/summary`);
             if (!response.ok) throw new Error("Failed to fetch macro summary");
             return await response.json();
         } catch (error) {
@@ -37,11 +63,10 @@ class CryptoAPI {
         }
     }
 
-
     async getScreenerData(interval = "1h", category = "ALL", assetClass = "ALL", minVolume = 0) {
         try {
             const params = new URLSearchParams({ interval, category, asset_class: assetClass, min_volume: minVolume });
-            const response = await fetch(`${this.baseURL}/api/screener?${params}`);
+            const response = await this._fetch(`${this.baseURL}/api/screener?${params}`);
             if (!response.ok) throw new Error("Failed to fetch screener data");
             return await response.json();
         } catch (error) {
@@ -52,7 +77,7 @@ class CryptoAPI {
 
     async getSymbolKlines(symbol, interval = "1h", limit = 100) {
         try {
-            const response = await fetch(`${this.baseURL}/api/klines/${encodeURIComponent(symbol)}?interval=${interval}&limit=${limit}`);
+            const response = await this._fetch(`${this.baseURL}/api/klines/${encodeURIComponent(symbol)}?interval=${interval}&limit=${limit}`);
             if (!response.ok) throw new Error(`Failed to fetch klines for ${symbol}`);
             return await response.json();
         } catch (error) {
@@ -71,7 +96,7 @@ class CryptoAPI {
                 asset_class: assetClass,
                 mtf_aligned: mtfAligned,
             });
-            const response = await fetch(`${this.baseURL}/api/trade-signals?${params}`);
+            const response = await this._fetch(`${this.baseURL}/api/trade-signals?${params}`);
             if (!response.ok) throw new Error("Failed to fetch trade signals");
             return await response.json();
         } catch (error) {
@@ -89,7 +114,7 @@ class CryptoAPI {
                 lookback_bars: lookbackBars,
                 force_refresh: forceRefresh,
             });
-            const response = await fetch(`${this.baseURL}/api/futures/high-delta?${params}`);
+            const response = await this._fetch(`${this.baseURL}/api/futures/high-delta?${params}`);
             if (!response.ok) throw new Error("Failed to fetch high delta futures");
             return await response.json();
         } catch (error) {
@@ -100,9 +125,8 @@ class CryptoAPI {
 
     async getWallet() {
         try {
-            const response = await fetch(`${this.baseURL}/api/wallet`);
+            const response = await this._fetch(`${this.baseURL}/api/wallet`);
             if (!response.ok) throw new Error("Failed to fetch wallet");
-
             return await response.json();
         } catch (error) {
             console.error("Wallet API error:", error);
@@ -112,7 +136,7 @@ class CryptoAPI {
 
     async placeOrder(orderData) {
         try {
-            const response = await fetch(`${this.baseURL}/api/order`, {
+            const response = await this._fetch(`${this.baseURL}/api/order`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(orderData),
@@ -129,7 +153,7 @@ class CryptoAPI {
     async getOpenOrders(symbol = null) {
         try {
             const params = symbol ? `?symbol=${symbol}` : "";
-            const response = await fetch(`${this.baseURL}/api/orders/open${params}`);
+            const response = await this._fetch(`${this.baseURL}/api/orders/open${params}`);
             if (!response.ok) throw new Error("Failed to fetch open orders");
             return await response.json();
         } catch (error) {
@@ -140,7 +164,7 @@ class CryptoAPI {
 
     async cancelOrder(symbol, orderId) {
         try {
-            const response = await fetch(`${this.baseURL}/api/order/${symbol}/${orderId}`, {
+            const response = await this._fetch(`${this.baseURL}/api/order/${symbol}/${orderId}`, {
                 method: "DELETE",
             });
             if (!response.ok) throw new Error("Failed to cancel order");
@@ -151,13 +175,9 @@ class CryptoAPI {
         }
     }
 
-    // ================================================
-    // Bot Auto-Trader API
-    // ================================================
-
     async startBot() {
         try {
-            const response = await fetch(`${this.baseURL}/api/bot/start`, { method: "POST" });
+            const response = await this._fetch(`${this.baseURL}/api/bot/start`, { method: "POST" });
             return await response.json();
         } catch (error) {
             console.error("Bot start error:", error);
@@ -167,7 +187,7 @@ class CryptoAPI {
 
     async stopBot() {
         try {
-            const response = await fetch(`${this.baseURL}/api/bot/stop`, { method: "POST" });
+            const response = await this._fetch(`${this.baseURL}/api/bot/stop`, { method: "POST" });
             return await response.json();
         } catch (error) {
             console.error("Bot stop error:", error);
@@ -177,7 +197,7 @@ class CryptoAPI {
 
     async getBotStatus() {
         try {
-            const response = await fetch(`${this.baseURL}/api/bot/status`);
+            const response = await this._fetch(`${this.baseURL}/api/bot/status`);
             if (!response.ok) throw new Error("Failed to fetch bot status");
             return await response.json();
         } catch (error) {
@@ -188,7 +208,7 @@ class CryptoAPI {
 
     async updateBotConfig(config) {
         try {
-            const response = await fetch(`${this.baseURL}/api/bot/config`, {
+            const response = await this._fetch(`${this.baseURL}/api/bot/config`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(config),
@@ -202,7 +222,7 @@ class CryptoAPI {
 
     async squareOffAll() {
         try {
-            const response = await fetch(`${this.baseURL}/api/bot/square-off-all`, { method: "POST" });
+            const response = await this._fetch(`${this.baseURL}/api/bot/square-off-all`, { method: "POST" });
             return await response.json();
         } catch (error) {
             console.error("Square off all error:", error);
@@ -212,7 +232,7 @@ class CryptoAPI {
 
     async squareOffPosition(symbol) {
         try {
-            const response = await fetch(`${this.baseURL}/api/bot/square-off/${encodeURIComponent(symbol)}`, { method: "POST" });
+            const response = await this._fetch(`${this.baseURL}/api/bot/square-off/${encodeURIComponent(symbol)}`, { method: "POST" });
             return await response.json();
         } catch (error) {
             console.error(`Square off ${symbol} error:`, error);
@@ -222,7 +242,7 @@ class CryptoAPI {
 
     async emergencyStopBot() {
         try {
-            const response = await fetch(`${this.baseURL}/api/bot/emergency-stop`, { method: "POST" });
+            const response = await this._fetch(`${this.baseURL}/api/bot/emergency-stop`, { method: "POST" });
             return await response.json();
         } catch (error) {
             console.error("Emergency stop error:", error);
@@ -232,7 +252,7 @@ class CryptoAPI {
 
     async scanBotNow() {
         try {
-            const response = await fetch(`${this.baseURL}/api/bot/scan-now`, { method: "POST" });
+            const response = await this._fetch(`${this.baseURL}/api/bot/scan-now`, { method: "POST" });
             return await response.json();
         } catch (error) {
             console.error("Manual scan error:", error);
@@ -242,7 +262,7 @@ class CryptoAPI {
 
     async clearBotJournal() {
         try {
-            const response = await fetch(`${this.baseURL}/api/bot/journal`, { method: "DELETE" });
+            const response = await this._fetch(`${this.baseURL}/api/bot/journal`, { method: "DELETE" });
             return await response.json();
         } catch (error) {
             console.error("Clear journal error:", error);
@@ -252,7 +272,7 @@ class CryptoAPI {
 
     async getBotAnalytics() {
         try {
-            const response = await fetch(`${this.baseURL}/api/bot/analytics`);
+            const response = await this._fetch(`${this.baseURL}/api/bot/analytics`);
             if (!response.ok) throw new Error("Failed to fetch bot analytics");
             return await response.json();
         } catch (error) {
@@ -263,4 +283,3 @@ class CryptoAPI {
 }
 
 window.cryptoAPI = new CryptoAPI();
-

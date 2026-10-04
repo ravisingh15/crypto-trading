@@ -16,8 +16,14 @@
             <div class="brand">
                 <div class="logo-icon">⚡</div>
                 <div class="brand-text">
-                    <h1>CYPHER<span>SCREEN</span></h1>
-                    <p class="subtitle">Live Binance Intelligence & Signal Terminal</p>
+                    <div class="brand-title-row">
+                        <h1>CYPHER<span>SCREEN</span></h1>
+                        <span class="remote-screener-badge" title="Screening Terminal • Manual Execution Mode on Binance">
+                            <span class="pulse-ring"></span>
+                            <span class="screener-mode-text">🛰️ SCREENER</span>
+                        </span>
+                    </div>
+                    <p class="subtitle">Live Binance Intelligence &amp; Multi-Factor Market Screener</p>
                 </div>
             </div>
             
@@ -29,16 +35,23 @@
             </div>
 
             <div class="header-actions">
+                <div class="latency-badge" id="latency-badge" title="Live REST API Round-Trip Latency">
+                    <span class="latency-dot"></span>
+                    <span id="latency-val">-- ms</span>
+                </div>
                 <div class="last-refreshed-badge" id="header-last-refreshed" title="Time since last data refresh">
                     <span class="refresh-clock">🕒</span>
                     <span class="last-refreshed-text" id="last-refreshed-time">Updating...</span>
                 </div>
-                <button class="btn btn-outline" id="btn-refresh" title="Refresh market overview & screener data">
+                <button class="btn btn-outline" id="btn-refresh" title="Refresh market overview &amp; screener data">
                     <span class="spin-icon">↻</span> Refresh
                 </button>
-                <div class="status-indicator online">
-                    <span class="dot"></span> Live API
-                </div>
+                <button class="btn btn-icon-round" id="btn-sound-toggle" title="Toggle Audio Chime Alerts">
+                    <span id="sound-icon">🔔</span>
+                </button>
+                <button class="btn btn-icon-round" id="btn-fullscreen-toggle" title="Toggle Fullscreen Mode">
+                    <span>⛶</span>
+                </button>
             </div>
         </header>
 
@@ -224,11 +237,29 @@
             </section>
 
 
+            <!-- Quick Preset Chips Bar -->
+            <section class="quick-presets-bar glass-card" id="quick-presets-bar">
+                <div class="presets-header">
+                    <span class="presets-title">⚡ Quick Presets:</span>
+                </div>
+                <div class="presets-scroll" id="presets-scroll">
+                    <button class="preset-chip active" data-preset="ALL">🌐 All Pairs</button>
+                    <button class="preset-chip" data-preset="WATCHLIST">⭐ Watchlist (<span id="watchlist-count">0</span>)</button>
+                    <button class="preset-chip" data-preset="STRONG_BUY">🎯 Strong Buy</button>
+                    <button class="preset-chip" data-preset="TOP_GAINERS">🔥 Top Gainers (&gt;4%)</button>
+                    <button class="preset-chip" data-preset="OVERSOLD">🩸 Oversold (RSI &lt; 35)</button>
+                    <button class="preset-chip" data-preset="OVERBOUGHT">⚠️ Overbought (RSI &gt; 68)</button>
+                    <button class="preset-chip" data-preset="RVOL_SPIKE">🚀 RVOL Spike (&ge;2.0x)</button>
+                    <button class="preset-chip" data-preset="ALPHA_LEADERS">💎 Alpha Leaders</button>
+                </div>
+            </section>
+
             <!-- Screener Data Table -->
             <section class="table-container glass-card" id="screener-table-section">
                 <table class="screener-table" id="screener-table">
                     <thead>
                         <tr>
+                            <th style="width: 36px; text-align: center;" title="Favorite to Watchlist">⭐</th>
                             <th data-sort="symbol" class="sortable">Asset / Symbol <span class="sort-arrow">↕</span></th>
                             <th data-sort="category" class="sortable">Category <span class="sort-arrow">↕</span></th>
                             <th data-sort="price" class="sortable">Price (USDT) <span class="sort-arrow">↕</span></th>
@@ -240,12 +271,12 @@
                             <th data-sort="quote_volume_24h" class="sortable">24h Volume <span class="sort-arrow">↕</span></th>
                             <th data-sort="score" class="sortable">Signal Score <span class="sort-arrow">↕</span></th>
                             <th data-sort="recommendation" class="sortable">Signal Status <span class="sort-arrow">↕</span></th>
-                            <th>Action</th>
+                            <th style="text-align: right; min-width: 150px;">Trade / Chart</th>
                         </tr>
                     </thead>
                     <tbody id="table-body">
                         <tr>
-                            <td colspan="12" class="loading-cell">
+                            <td colspan="13" class="loading-cell">
                                 <div class="spinner"></div> Running market scan &amp; calculating macro confluence...
                             </td>
                         </tr>
@@ -839,7 +870,7 @@
                     <span class="badge" id="modal-recommendation">STRONG BUY</span>
                 </div>
 
-                <div class="modal-right-controls" style="display: flex; align-items: center; gap: 12px;">
+                <div class="modal-right-controls" style="display: flex; align-items: center; gap: 10px;">
                     <div class="modal-tf-group" id="modal-tf-group">
                         <button class="modal-tf-btn" data-tf="5m">5m</button>
                         <button class="modal-tf-btn" data-tf="15m">15m</button>
@@ -847,6 +878,9 @@
                         <button class="modal-tf-btn" data-tf="4h">4h</button>
                         <button class="modal-tf-btn" data-tf="1d">1d</button>
                     </div>
+                    <a href="#" target="_blank" rel="noopener noreferrer" class="btn btn-binance-modal" id="modal-binance-link" title="Open pair on Binance">
+                        ↗ Trade on Binance
+                    </a>
                     <button class="btn-close" id="btn-close-modal">✕</button>
                 </div>
             </div>
@@ -864,7 +898,7 @@
                     </div>
 
                     <div class="risk-calculator">
-                        <h4>Risk & Position Calculator</h4>
+                        <h4>Risk &amp; Position Calculator</h4>
                         <div class="calc-field">
                             <label>Account Size ($):</label>
                             <input type="number" id="calc-account" value="1000" min="10">
@@ -878,6 +912,9 @@
                             <div class="calc-row"><span>Stop Loss (1.5x ATR):</span> <strong id="calc-sl-target">$0</strong></div>
                             <div class="calc-row"><span>Take Profit (2x Risk):</span> <strong id="calc-tp-target">$0</strong></div>
                         </div>
+                        <button class="btn btn-outline btn-sm" id="btn-copy-calc-levels" style="margin-top: 10px; width: 100%;">
+                            📋 Copy Position Levels
+                        </button>
                     </div>
                 </div>
             </div>
@@ -918,6 +955,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Global Toast Notifications -->
+    <div class="toast-container" id="toast-container"></div>
 
     <script src="js/api.js"></script>
     <script src="js/chart.js"></script>
