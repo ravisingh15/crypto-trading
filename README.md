@@ -69,7 +69,10 @@ crypto-analysis/
 ├── README.md                          # Documentation & project guide
 ├── requirements.txt                   # Dependencies (FastAPI, Pandas, Jupyter, Plotly)
 ├── run_backtest.py                    # 6-Month multi-pair institutional backtesting CLI
-├── start.bat                          # 1-Click launcher script
+├── start.sh                           # 1-Click launcher script (macOS / Linux)
+├── run.sh                             # Launcher shortcut (macOS / Linux)
+├── start.bat                          # 1-Click launcher script (Windows)
+├── run.bat                            # Launcher shortcut (Windows)
 ├── assets/
 │   └── screenshots/                   # UI documentation screenshots
 ├── notebooks/                         # Jupyter Notebooks for analysis
@@ -100,13 +103,28 @@ crypto-analysis/
 
 ## Quick Start Guide
 
+### 🍎 1-Click Launch (macOS & Linux)
+Open your terminal in this repository and run:
+```bash
+./start.sh
+# or
+./run.sh
+```
+- It automatically verifies Python (Python 3.10+), installs missing dependencies if needed, creates a `.env` template if missing, starts the FastAPI server, and opens **`http://127.0.0.1:8050`** (or 8000) in your default web browser.
+
+---
+
 ### 🚀 1-Click Launch (Windows)
-Simply **double-click** [`start.bat`](file:///c:/Users/rvsdc/crypto-analysis/start.bat) in the project folder!
-- It automatically verifies Python, installs missing dependencies if needed, starts the FastAPI server, and opens **`http://127.0.0.1:8000`** in your default web browser.
+Simply **double-click** `start.bat` or run:
+```bat
+start.bat
+```
+- It automatically verifies Python, installs missing dependencies if needed, starts the FastAPI server, and opens the dashboard in your default browser.
 
 ---
 
 ### Manual Launch
+
 
 #### 1. Prerequisites
 - Ensure you have **Python 3.10+** installed.

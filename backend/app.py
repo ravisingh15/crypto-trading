@@ -728,9 +728,41 @@ if __name__ == "__main__":
     import uvicorn
     import webbrowser
     import threading
+    import socket
+
+    def is_port_available(port: int, host: str) -> bool:
+        targets = [host]
+        if host in ("0.0.0.0", ""):
+            targets.append("127.0.0.1")
+        for h in targets:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    s.bind((h, port))
+            except OSError:
+                return False
+        return True
+
+    def find_available_port(start_port: int, host: str) -> int:
+        port = start_port
+        while port < start_port + 200:
+            if is_port_available(port, host):
+                return port
+            port += 1
+        return start_port
+
+    active_port = PORT
+    if not is_port_available(active_port, HOST):
+        fallback_start = 8050 if active_port in (8000, 8001) else active_port + 1
+        active_port = find_available_port(fallback_start, HOST)
+        os.environ["PORT"] = str(active_port)
+        print(f"\n[!] Notice: Port {PORT} is already in use by another application.")
+        print(f"[*] Automatically switched to available port: {active_port}")
+
+    display_host = "127.0.0.1" if HOST in ("0.0.0.0", "") else HOST
 
     def open_browser():
-        url = f"http://{HOST}:{PORT}"
+        url = f"http://{display_host}:{active_port}"
         print(f"Opening {url} in your default browser...")
         webbrowser.open(url)
 
@@ -739,8 +771,9 @@ if __name__ == "__main__":
 
     print(f"\n=======================================================")
     print(f"   CypherScreen - Binance Market Screener & Bot")
-    print(f"   URL: http://{HOST}:{PORT}")
-    print(f"   API Docs: http://{HOST}:{PORT}/docs")
+    print(f"   URL: http://{display_host}:{active_port}")
+    print(f"   API Docs: http://{display_host}:{active_port}/docs")
     print(f"=======================================================\n")
-    uvicorn.run("backend.app:app", host=HOST, port=PORT, reload=DEBUG)
+    uvicorn.run("backend.app:app", host=HOST, port=active_port, reload=DEBUG)
+
 
