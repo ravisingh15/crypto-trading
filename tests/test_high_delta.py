@@ -141,6 +141,28 @@ class TestHighDeltaScanner(unittest.TestCase):
         cached_res = scan_futures_high_delta(min_volume=5_000_000, min_natr=0.2, limit=10, force_refresh=False)
         self.assertTrue(cached_res.get("cached", False))
 
+    @patch("backend.binance_client.binance_client.futures_get_24h_tickers")
+    @patch("backend.binance_client.binance_client.get_usdt_tickers")
+    @patch("backend.binance_client.binance_client.get_klines")
+    def test_scan_futures_high_delta_spot_fallback(self, mock_klines, mock_spot_tickers, mock_futures_tickers):
+        # Simulate futures failing completely
+        mock_futures_tickers.side_effect = RuntimeError("Connection reset by peer")
+        mock_spot_tickers.return_value = [
+            {"symbol": "SOLUSDT", "quoteVolume": "50000000", "priceChangePercent": "5.5"}
+        ]
+        mock_klines.return_value = [
+            [1700000000000 + i * 300000, "150.0", "154.0", "148.0", "152.0", "500.0",
+             1700000300000, "76000.0", 30, "15.0", "38000.0", "0"]
+            for i in range(25)
+        ]
+
+        res = scan_futures_high_delta(min_volume=1_000_000, min_natr=0.1, limit=5, force_refresh=True)
+        self.assertEqual(res["data_source"], "SPOT_FALLBACK")
+        self.assertIsNotNone(res["notice"])
+        self.assertGreaterEqual(res["count"], 1)
+        self.assertEqual(res["results"][0]["symbol"], "SOLUSDT")
+        self.assertEqual(res["results"][0]["market_type"], "SPOT (Fallback)")
+
 
 class TestHighDeltaAPIEndpoint(unittest.TestCase):
 

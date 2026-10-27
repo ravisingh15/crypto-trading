@@ -195,6 +195,38 @@ def _process_single_futures_pair(
         return None
 
 
+def _process_single_spot_pair(
+    ticker: Dict[str, Any],
+    lookback_bars: int = 12
+) -> Optional[Dict[str, Any]]:
+    """Fetch 5m spot klines and calculate delta metrics for one symbol as fallback."""
+    symbol = ticker.get("symbol", "")
+    try:
+        raw_klines = binance_client.get_klines(symbol, interval="5m", limit=30)
+        if not raw_klines or len(raw_klines) < 15:
+            return None
+
+        df = enrich_klines_dataframe(raw_klines)
+        metrics = calculate_candle_delta_metrics(df, lookback_bars=lookback_bars)
+        if not metrics:
+            return None
+
+        volume_24h = float(ticker.get("quoteVolume", 0))
+        price_change_24h = float(ticker.get("priceChangePercent", 0))
+        category = get_symbol_category(symbol)
+
+        return {
+            "symbol": symbol,
+            "category": category,
+            "market_type": "SPOT (Fallback)",
+            "volume_24h_usdt": round(volume_24h, 2),
+            "price_change_24h": round(price_change_24h, 2),
+            **metrics,
+        }
+    except Exception:
+        return None
+
+
 def scan_futures_high_delta(
     min_volume: float = 5_000_000,
     min_natr: float = 0.5,
@@ -226,19 +258,36 @@ def scan_futures_high_delta(
             "count": len(filtered[:limit]),
             "cached": True,
             "last_scanned": _HIGH_DELTA_CACHE["last_scanned"],
+            "data_source": _HIGH_DELTA_CACHE.get("data_source", "FUTURES"),
+            "notice": _HIGH_DELTA_CACHE.get("notice"),
             "results": filtered[:limit],
         }
 
+    data_source = "FUTURES"
+    notice = None
+    use_spot_fallback = False
+
     try:
         all_tickers = binance_client.futures_get_24h_tickers()
+        active_url = getattr(binance_client, "futures_url", "")
+        if "testnet" in active_url.lower():
+            data_source = "FUTURES_TESTNET"
+            notice = "Running on Binance Futures Testnet mirror (bypassing ISP network blocks)"
     except Exception as e:
-        return {
-            "count": 0,
-            "error": f"Failed to fetch futures tickers: {str(e)}",
-            "results": [],
-        }
+        # Fall back to top Spot pairs if all Futures endpoints fail
+        try:
+            all_tickers = binance_client.get_usdt_tickers(asset_class="CRYPTO")
+            use_spot_fallback = True
+            data_source = "SPOT_FALLBACK"
+            notice = "Futures endpoints unreachable; displaying top 5m Spot volatility & scalp setups"
+        except Exception:
+            return {
+                "count": 0,
+                "error": f"Failed to fetch futures tickers: {str(e)}",
+                "results": [],
+            }
 
-    # Filter for active USDT perpetual contracts with volume
+    # Filter for active USDT pairs with volume
     candidates = []
     for t in all_tickers:
         sym = t.get("symbol", "")
@@ -258,10 +307,12 @@ def scan_futures_high_delta(
         reverse=True
     )[:max_scan_pool]
 
+    target_worker = _process_single_spot_pair if use_spot_fallback else _process_single_futures_pair
+
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures_map = {
-            executor.submit(_process_single_futures_pair, ticker, lookback_bars): ticker["symbol"]
+            executor.submit(target_worker, ticker, lookback_bars): ticker["symbol"]
             for ticker in candidates
         }
         for future in concurrent.futures.as_completed(futures_map):
@@ -274,10 +325,14 @@ def scan_futures_high_delta(
 
     _HIGH_DELTA_CACHE["data"] = results
     _HIGH_DELTA_CACHE["last_scanned"] = now
+    _HIGH_DELTA_CACHE["data_source"] = data_source
+    _HIGH_DELTA_CACHE["notice"] = notice
 
     return {
         "count": len(results[:limit]),
         "cached": False,
         "last_scanned": now,
+        "data_source": data_source,
+        "notice": notice,
         "results": results[:limit],
     }

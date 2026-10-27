@@ -118,3 +118,25 @@ class TestBinanceClientKlinesAndOrders:
         assert kwargs["params"]["symbol"] == "NVDABUSDT"
         assert kwargs["params"]["side"] == "BUY"
         assert kwargs["params"]["quantity"] == 1.5
+
+
+class TestBinanceClientFuturesEndpoints:
+    def test_futures_fallback_when_primary_fails(self, client):
+        import requests
+        client.futures_urls = ["https://broken.futures.com", "https://working.futures.com"]
+        client._active_futures_url = "https://broken.futures.com"
+
+        mock_resp_success = MagicMock()
+        mock_resp_success.status_code = 200
+        mock_resp_success.json.return_value = [{"symbol": "BTCUSDT", "lastPrice": "65000"}]
+
+        def side_effect(method, url, **kwargs):
+            if "broken" in url:
+                raise requests.exceptions.ConnectionError("Connection reset by peer")
+            return mock_resp_success
+
+        with patch.object(client.session, "request", side_effect=side_effect):
+            res = client.futures_get_24h_tickers()
+            assert len(res) == 1
+            assert res[0]["symbol"] == "BTCUSDT"
+            assert client._active_futures_url == "https://working.futures.com"

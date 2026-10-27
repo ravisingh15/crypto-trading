@@ -27,6 +27,7 @@ SCREENER_ONLY_MODE = os.getenv("SCREENER_ONLY_MODE", "false").lower() in ("true"
 BINANCE_BASE_URL = os.getenv("BINANCE_BASE_URL", "https://api.binance.com")
 BINANCE_DATA_URL = os.getenv("BINANCE_DATA_URL", "https://data-api.binance.vision")
 BINANCE_FUTURES_URL = os.getenv("BINANCE_FUTURES_URL", "https://fapi.binance.com")
+BINANCE_FUTURES_DATA_URL = os.getenv("BINANCE_FUTURES_DATA_URL", "https://testnet.binancefuture.com")
 
 # Default pairs to track if scanning fails or for quick summary (Crypto)
 TOP_PAIRS = [

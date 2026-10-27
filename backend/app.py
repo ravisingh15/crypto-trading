@@ -729,6 +729,16 @@ if __name__ == "__main__":
     import webbrowser
     import threading
     import socket
+    import argparse
+
+    parser = argparse.ArgumentParser(description="CypherScreen Market Screener & Bot")
+    parser.add_argument("--host", default=HOST, help=f"Host interface to bind (default: {HOST})")
+    parser.add_argument("--port", type=int, default=PORT, help=f"Port number to bind (default: {PORT})")
+    parser.add_argument("--no-browser", action="store_true", help="Do not automatically open web browser")
+    args, _ = parser.parse_known_args()
+
+    bind_host = args.host
+    requested_port = args.port
 
     def is_port_available(port: int, host: str) -> bool:
         targets = [host]
@@ -751,29 +761,47 @@ if __name__ == "__main__":
             port += 1
         return start_port
 
-    active_port = PORT
-    if not is_port_available(active_port, HOST):
+    def get_local_ip() -> str:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                return s.getsockname()[0]
+        except Exception:
+            try:
+                return socket.gethostbyname(socket.gethostname())
+            except Exception:
+                return "127.0.0.1"
+
+    active_port = requested_port
+    if not is_port_available(active_port, bind_host):
         fallback_start = 8050 if active_port in (8000, 8001) else active_port + 1
-        active_port = find_available_port(fallback_start, HOST)
+        active_port = find_available_port(fallback_start, bind_host)
         os.environ["PORT"] = str(active_port)
-        print(f"\n[!] Notice: Port {PORT} is already in use by another application.")
+        print(f"\n[!] Notice: Port {requested_port} is already in use by another application.")
         print(f"[*] Automatically switched to available port: {active_port}")
 
-    display_host = "127.0.0.1" if HOST in ("0.0.0.0", "") else HOST
+    local_ip = get_local_ip()
+    display_host = "127.0.0.1" if bind_host in ("0.0.0.0", "") else bind_host
 
     def open_browser():
         url = f"http://{display_host}:{active_port}"
         print(f"Opening {url} in your default browser...")
         webbrowser.open(url)
 
-    # Launch browser after a brief delay so server has started
-    threading.Timer(1.2, open_browser).start()
+    if not args.no_browser:
+        # Launch browser after a brief delay so server has started
+        threading.Timer(1.2, open_browser).start()
 
-    print(f"\n=======================================================")
-    print(f"   CypherScreen - Binance Market Screener & Bot")
-    print(f"   URL: http://{display_host}:{active_port}")
-    print(f"   API Docs: http://{display_host}:{active_port}/docs")
-    print(f"=======================================================\n")
-    uvicorn.run("backend.app:app", host=HOST, port=active_port, reload=DEBUG)
+    print("\n" + "=" * 65)
+    print("   CYPHERSCREEN : Binance Screener & Bot Dashboard")
+    print(f"   Local Access:    http://localhost:{active_port}")
+    if bind_host in ("0.0.0.0", ""):
+        print(f"   WiFi / Network:  http://{local_ip}:{active_port}  (Access from any phone/laptop)")
+        print(f"   API Docs:        http://{local_ip}:{active_port}/docs")
+    else:
+        print(f"   Network Access:  http://{bind_host}:{active_port}")
+        print(f"   API Docs:        http://{bind_host}:{active_port}/docs")
+    print("=" * 65 + "\n")
+    uvicorn.run("backend.app:app", host=bind_host, port=active_port, reload=DEBUG)
 
 

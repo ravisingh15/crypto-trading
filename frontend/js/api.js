@@ -119,7 +119,7 @@ class CryptoAPI {
             return await response.json();
         } catch (error) {
             console.error("Backend high delta futures error:", error);
-            return { count: 0, results: [] };
+            return { count: 0, results: [], error: error.message || "Failed to fetch high delta futures" };
         }
     }
 

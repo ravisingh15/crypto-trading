@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 from typing import List, Dict, Any, Optional
 from backend.config import (
     API_KEY, SECRET_KEY, BINANCE_BASE_URL, BINANCE_DATA_URL, BINANCE_FUTURES_URL,
-    STOCK_METADATA, TOP_STOCK_PAIRS
+    BINANCE_FUTURES_DATA_URL, STOCK_METADATA, TOP_STOCK_PAIRS
 )
 
 class BinanceClient:
@@ -19,13 +19,27 @@ class BinanceClient:
         self.api_key = api_key
         self.secret_key = secret_key
         self.base_urls = [BINANCE_DATA_URL, BINANCE_BASE_URL]
-        self.futures_url = BINANCE_FUTURES_URL
+        self.futures_urls = [BINANCE_FUTURES_URL]
+        if BINANCE_FUTURES_DATA_URL and BINANCE_FUTURES_DATA_URL not in self.futures_urls:
+            self.futures_urls.append(BINANCE_FUTURES_DATA_URL)
+        self._active_futures_url = self.futures_urls[0]
         self.session = requests.Session()
         if self.api_key:
             self.session.headers.update({
                 "X-MBX-APIKEY": self.api_key,
                 "Content-Type": "application/json"
             })
+
+    @property
+    def futures_url(self) -> str:
+        return self._active_futures_url
+
+    @futures_url.setter
+    def futures_url(self, value: str):
+        if value:
+            self._active_futures_url = value
+            if value not in self.futures_urls:
+                self.futures_urls.insert(0, value)
 
     def resolve_symbol(self, symbol: str) -> str:
         """
@@ -365,18 +379,37 @@ class BinanceClient:
             ).hexdigest()
             params["signature"] = signature
 
-        url = f"{self.futures_url}{path}"
-        try:
-            response = self.session.request(method, url, params=params, timeout=10)
-            if response.status_code == 200:
-                return response.json()
-            else:
-                error_data = response.json() if response.text else {}
-                raise RuntimeError(f"Futures API error {response.status_code}: {error_data.get('msg', response.text)}")
-        except RuntimeError:
-            raise
-        except Exception as e:
-            raise RuntimeError(f"Futures API request failed: {str(e)}")
+        last_error = None
+        # Try active futures URL first, followed by other candidate endpoints
+        endpoints_to_try = [self._active_futures_url] + [u for u in self.futures_urls if u != self._active_futures_url]
+        for base_url in endpoints_to_try:
+            url = f"{base_url}{path}"
+            for attempt in range(2):
+                try:
+                    response = self.session.request(method, url, params=params, timeout=6)
+                    if response.status_code == 200:
+                        if self._active_futures_url != base_url:
+                            self._active_futures_url = base_url
+                        return response.json()
+                    elif response.status_code == 429:
+                        wait = 0.5 * (2 ** attempt)
+                        time.sleep(wait)
+                        continue
+                    else:
+                        error_data = response.json() if response.text else {}
+                        err_msg = error_data.get('msg', response.text)
+                        last_error = RuntimeError(f"Futures API error {response.status_code}: {err_msg}")
+                        break
+                except Exception as e:
+                    last_error = e
+                    if attempt < 1:
+                        time.sleep(0.2)
+                        continue
+                    break
+
+        if last_error:
+            raise RuntimeError(f"Futures API request failed: {str(last_error)}")
+        raise RuntimeError("Failed to complete Binance Futures API request.")
 
     def futures_get_24h_tickers(self) -> List[Dict[str, Any]]:
         """Fetch 24-hour price change statistics for all Futures contracts."""

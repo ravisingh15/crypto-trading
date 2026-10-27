@@ -108,6 +108,7 @@ def _calculate_signal_confidence(
     df: pd.DataFrame,
     idx: int,
     direction: str,
+    strategy_type: str = "TREND",
     macro_regime: str = "NEUTRAL",
     rs_status: str = "IN_LINE",
     htf_bias: str = "NEUTRAL",
@@ -115,11 +116,76 @@ def _calculate_signal_confidence(
     """
     Calculate a confluence-based confidence score (0-100) for a signal.
     Checks alignment of multiple indicators + Macro Benchmark Regime + Relative Strength + MTF Trend.
+    Adaptive for TREND/BREAKOUT vs MEAN_REVERSION strategy types.
     """
     row = df.iloc[idx]
-    # Base score for passing strategy rule
     score = 20
 
+    if strategy_type == "MEAN_REVERSION":
+        # Mean Reversion scoring: favors range conditions and extreme band stretch
+        close = row.get('close', 0)
+        rsi = row.get('rsi', 50)
+        adx = row.get('adx', 20)
+        
+        # 1. Bollinger Band extreme deviation (+20)
+        if direction == 'LONG':
+            bb_lower = row.get('bb_lower', close)
+            low = row.get('low', close)
+            if low <= bb_lower or close <= bb_lower:
+                score += 20
+        else:
+            bb_upper = row.get('bb_upper', close)
+            high = row.get('high', close)
+            if high >= bb_upper or close >= bb_upper:
+                score += 20
+
+        # 2. RSI extreme zone (+15)
+        if direction == 'LONG' and rsi <= 38:
+            score += 15
+        elif direction == 'SHORT' and rsi >= 62:
+            score += 15
+
+        # 3. Range-bound market confirmation (+15)
+        if adx < 25:
+            score += 15  # Ideal ranging environment
+        elif adx < 32:
+            score += 8
+
+        # 4. Reversal candle confirmation (+10)
+        open_val = row.get('open', close)
+        if direction == 'LONG' and close >= open_val:
+            score += 10
+        elif direction == 'SHORT' and close <= open_val:
+            score += 10
+
+        # 5. Volume surge / absorption (+10)
+        rvol = row.get('rvol', 1.0)
+        if rvol > 1.0:
+            score += 10
+
+        # 6. Macro Regime Context (+10)
+        if macro_regime == "RANGE_CONSOLIDATION":
+            score += 10
+        elif macro_regime in ["BULL_PULLBACK", "BULL_EXPANSION"] and direction == "LONG":
+            score += 10
+        elif macro_regime in ["BEAR_CORRECTION", "BEAR_EXPANSION"] and direction == "SHORT":
+            score += 10
+
+        # 7. Higher timeframe alignment (+10 / -10)
+        if htf_bias == "NEUTRAL":
+            score += 10
+        elif direction == "LONG" and htf_bias == "BULL":
+            score += 10
+        elif direction == "SHORT" and htf_bias == "BEAR":
+            score += 10
+        elif direction == "LONG" and htf_bias == "BEAR":
+            score -= 10
+        elif direction == "SHORT" and htf_bias == "BULL":
+            score -= 10
+
+        return max(15, min(score, 100))
+
+    # Standard Trend & Breakout scoring
     # EMA trend alignment (up to +20)
     if direction == 'LONG':
         if row.get('ema_8', 0) > row.get('ema_21', 0):
@@ -308,8 +374,12 @@ def scan_symbol_signals(
 
             htf_aligned = is_signal_aligned(direction, htf_bias)
 
+            strat_type = strat_info.get('type', 'TREND')
+            strat_pref_tf = strat_info.get('preferred_timeframe', '1h')
+
             confidence = _calculate_signal_confidence(
                 df, idx, direction,
+                strategy_type=strat_type,
                 macro_regime=bench_regime,
                 rs_status=rs_data.get("rs_status", "IN_LINE"),
                 htf_bias=htf_bias,
@@ -333,6 +403,8 @@ def scan_symbol_signals(
                 'sector': sector,
                 'strategy': strat_name,
                 'strategy_tier': strat_info.get('tier', 'B'),
+                'strategy_type': strat_type,
+                'preferred_timeframe': strat_pref_tf,
                 'strategy_desc': strat_info.get('description', ''),
                 'historical_pf': strat_info.get('historical_pf', 1.0),
                 'historical_wr': strat_info.get('historical_wr', 40.0),

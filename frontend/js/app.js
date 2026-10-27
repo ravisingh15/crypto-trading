@@ -1266,6 +1266,28 @@ document.addEventListener("DOMContentLoaded", () => {
             const res = await window.cryptoAPI.getHighDeltaFutures(minVol, minNatr, 40, 12, forceRefresh);
             currentDeltaData = res.results || [];
             deltaScanDone = true;
+
+            if (res.error && (!res.results || res.results.length === 0)) {
+                deltaCardsGrid.innerHTML = `
+                    <div class="signal-loading glass-card">
+                        <p style="color: var(--red-bear);">⚠️ ${res.error}</p>
+                        <p style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">
+                            Check your network connection or try lowering the minimum volume filter.
+                        </p>
+                    </div>
+                `;
+                if (deltaRecordsCount) deltaRecordsCount.textContent = "0 High Delta Contracts";
+                updateDeltaStats();
+                if (btnScanDelta) {
+                    btnScanDelta.disabled = false;
+                    btnScanDelta.innerHTML = '<span class="scan-icon">⚡</span> Scan 5m Futures';
+                }
+                return;
+            }
+
+            window._lastDeltaNotice = res.notice || null;
+            window._lastDeltaSource = res.data_source || null;
+
             renderDeltaCards();
             updateDeltaStats();
         } catch (err) {
@@ -1335,7 +1357,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (deltaRecordsCount) {
-            deltaRecordsCount.textContent = `${filtered.length} High Delta Contracts`;
+            let label = `${filtered.length} High Delta Contracts`;
+            if (window._lastDeltaSource === 'FUTURES_TESTNET') {
+                label += ` (Mirror)`;
+            } else if (window._lastDeltaSource === 'SPOT_FALLBACK') {
+                label += ` (Spot Vol)`;
+            }
+            deltaRecordsCount.textContent = label;
         }
 
         if (filtered.length === 0) {
