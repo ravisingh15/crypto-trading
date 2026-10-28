@@ -149,6 +149,9 @@
                     <span class="tab-icon">🎯</span> Trade Signals
                     <span class="signal-badge" id="signal-count-badge">0</span>
                 </button>
+                <button class="tab-btn" data-tab="strategy-lab">
+                    <span class="tab-icon">🧪</span> Strategy Lab
+                </button>
                 <button class="tab-btn" data-tab="wallet">
                     <span class="tab-icon">💰</span> Wallet
                 </button>
@@ -232,6 +235,7 @@
                     <button class="btn btn-outline btn-sm btn-screener-refresh" id="btn-screener-refresh" title="Refresh Screener Data">
                         <span class="spin-icon">↻</span> Refresh
                     </button>
+                    <button class="btn btn-outline btn-sm" id="btn-export-screener" title="Export screener results to CSV">⬇ CSV</button>
                     <span class="records-count" id="records-count">Showing 0 Pairs</span>
                 </div>
             </section>
@@ -264,6 +268,7 @@
                             <th data-sort="category" class="sortable">Category <span class="sort-arrow">↕</span></th>
                             <th data-sort="price" class="sortable">Price (USDT) <span class="sort-arrow">↕</span></th>
                             <th data-sort="price_change_24h" class="sortable">24h Change <span class="sort-arrow">↕</span></th>
+                            <th title="Last 24 closes">24h Trend</th>
                             <th data-sort="rsi" class="sortable">RSI (14) <span class="sort-arrow">↕</span></th>
                             <th data-sort="macd_hist" class="sortable">MACD Hist <span class="sort-arrow">↕</span></th>
                             <th data-sort="rvol" class="sortable">RVOL (20) <span class="sort-arrow">↕</span></th>
@@ -276,7 +281,7 @@
                     </thead>
                     <tbody id="table-body">
                         <tr>
-                            <td colspan="13" class="loading-cell">
+                            <td colspan="14" class="loading-cell">
                                 <div class="spinner"></div> Running market scan &amp; calculating macro confluence...
                             </td>
                         </tr>
@@ -324,6 +329,16 @@
                         </div>
 
                         <div class="filter-group">
+                            <label>Min Quality:</label>
+                            <select id="quality-select" class="select-input">
+                                <option value="0" selected>All</option>
+                                <option value="58">58+ (B)</option>
+                                <option value="70">70+ (A)</option>
+                                <option value="80">80+ (A+)</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
                             <label>Markets:</label>
                             <select id="signal-asset-select" class="select-input">
                                 <option value="ALL" selected>All</option>
@@ -355,8 +370,10 @@
                             <label>Alpha Tier:</label>
                             <select id="signal-tier-filter" class="select-input">
                                 <option value="ALL" selected>All Tiers</option>
-                                <option value="PROFITABLE">Top Alpha (PF > 1.0)</option>
-                                <option value="A">Tier A/A+ (PF ≥ 1.10)</option>
+                                <option value="PROFITABLE">Profitable (PF ≥ 1.0)</option>
+                                <option value="A">Tier A/A+ (PF ≥ 1.15)</option>
+                                <option value="QUALITY">Quality A/A+ (Score ≥ 70)</option>
+                                <option value="EDGE">Positive Edge (≥ 0R)</option>
                             </select>
                         </div>
 
@@ -366,6 +383,7 @@
                     </div>
 
                     <div class="toolbar-right">
+                        <button class="btn btn-outline btn-sm" id="btn-export-signals" title="Export visible signals to CSV">⬇ CSV</button>
                         <span class="records-count" id="signal-records-count">0 Active Signals</span>
                     </div>
                 </div>
@@ -376,6 +394,113 @@
                         <div class="spinner"></div>
                         <p>Click <strong>"Scan Now"</strong> to detect live trade entry points...</p>
                     </div>
+                </div>
+            </section>
+
+            <!-- Strategy Lab Panel (Hidden by Default) -->
+            <section class="strategy-lab-panel" id="strategy-lab-panel" style="display:none;">
+                <div class="signals-toolbar glass-card">
+                    <div class="toolbar-left">
+                        <div class="filter-group">
+                            <input type="text" id="strategy-lab-search" class="search-input" placeholder="🔍 Filter strategy / type..." style="max-width: 200px; padding: 6px 12px; font-size: 12px;">
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Stats Timeframe:</label>
+                            <select id="strategy-lab-timeframe" class="select-input">
+                                <option value="1h" selected>1h (Intraday)</option>
+                                <option value="4h">4h (Swing)</option>
+                                <option value="1d">1d (Proxy 4h)</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Strategy Type:</label>
+                            <select id="strategy-lab-type" class="select-input">
+                                <option value="ALL">All Types</option>
+                                <option value="TREND">Trend</option>
+                                <option value="BREAKOUT">Breakout</option>
+                                <option value="MEAN_REVERSION">Mean Reversion</option>
+                                <option value="ORDER_FLOW">Order Flow</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Show:</label>
+                            <select id="strategy-lab-filter" class="select-input">
+                                <option value="ALL">All Strategies</option>
+                                <option value="PROFITABLE">Profitable Only (PF ≥ 1.0)</option>
+                                <option value="POSITIVE_EDGE">Positive Expectancy Only</option>
+                            </select>
+                        </div>
+
+                        <button class="btn btn-primary" id="btn-refresh-strategies">
+                            <span class="scan-icon">🧪</span> Refresh Lab
+                        </button>
+                    </div>
+
+                    <div class="toolbar-right">
+                        <button class="btn btn-outline btn-sm" id="btn-export-strategies" title="Export strategy table to CSV">⬇ CSV</button>
+                        <span class="records-count" id="strategy-lab-count">0 Strategies</span>
+                    </div>
+                </div>
+
+                <div class="strategy-lab-summary" id="strategy-lab-summary">
+                    <div class="strategy-summary-card glass-card">
+                        <span class="strategy-summary-label">Strategies Tested</span>
+                        <span class="strategy-summary-value" id="lab-total">--</span>
+                        <span class="strategy-summary-sub" id="lab-total-sub">Long / Short mix</span>
+                    </div>
+                    <div class="strategy-summary-card glass-card">
+                        <span class="strategy-summary-label">Profitable After Fees</span>
+                        <span class="strategy-summary-value highlight-green" id="lab-profitable">--</span>
+                        <span class="strategy-summary-sub" id="lab-profitable-sub">PF &gt; 1.0</span>
+                    </div>
+                    <div class="strategy-summary-card glass-card">
+                        <span class="strategy-summary-label">Average Profit Factor</span>
+                        <span class="strategy-summary-value highlight-cyan" id="lab-avg-pf">--</span>
+                        <span class="strategy-summary-sub">Across active timeframe</span>
+                    </div>
+                    <div class="strategy-summary-card glass-card">
+                        <span class="strategy-summary-label">Best Strategy</span>
+                        <span class="strategy-summary-value highlight-gold" id="lab-best">--</span>
+                        <span class="strategy-summary-sub" id="lab-best-sub">Highest risk-adjusted edge</span>
+                    </div>
+                </div>
+
+                <div class="table-container glass-card strategy-lab-table-wrap">
+                    <table class="screener-table strategy-lab-table" id="strategy-lab-table">
+                        <thead>
+                            <tr>
+                                <th>Strategy</th>
+                                <th>Direction</th>
+                                <th>Type</th>
+                                <th>Best TF</th>
+                                <th>1H PF</th>
+                                <th>4H PF</th>
+                                <th>Active PF</th>
+                                <th>Win Rate</th>
+                                <th>Trades</th>
+                                <th>Avg Trade</th>
+                                <th>Max DD</th>
+                                <th>Sharpe</th>
+                                <th>Tier</th>
+                                <th>MTF Policy</th>
+                            </tr>
+                        </thead>
+                        <tbody id="strategy-lab-body">
+                            <tr>
+                                <td colspan="14" class="loading-cell">
+                                    <div class="spinner"></div> Loading six-month walk-forward strategy results...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="strategy-lab-notes glass-card">
+                    <strong>🧪 How to read this lab:</strong>
+                    Results are a six-month walk-forward test across eight liquid pairs using 2.0× ATR stops, 3.5× ATR targets (1:1.75 R:R), a 48-bar maximum hold, and 0.21% round-trip friction (fees + slippage). <strong>Avg Trade</strong> is net expectancy per trade and is the primary ranking metric. <strong>1H/4H PF</strong> shows how the same rules perform on each timeframe — a strategy should be traded on its best timeframe, not blindly on the chart you happen to be viewing.
                 </div>
             </section>
 
@@ -652,6 +777,11 @@
                                     <label>Min Signal Confidence (0-100)</label>
                                     <input type="number" id="bot-cfg-confidence" value="60" min="0" max="100" step="5">
                                 </div>
+                                <div class="bot-config-field">
+                                    <label>Min Composite Quality (0-100)</label>
+                                    <input type="number" id="bot-cfg-min-quality" value="55" min="0" max="100" step="5">
+                                    <p class="field-hint">Blends indicator confluence (55%), backtested edge (30%), freshness (15%) and regime fit.</p>
+                                </div>
                             </div>
                         </div>
 
@@ -693,10 +823,17 @@
                                 </div>
                                 <div class="bot-config-field" style="grid-column: 1 / -1;">
                                     <label class="bot-toggle-row">
+                                        <input type="checkbox" id="bot-cfg-best-per-symbol" checked>
+                                        <span>🎯 Only Trade the Strongest Setup per Symbol</span>
+                                    </label>
+                                    <p class="field-hint">Prevents stacking correlated trades when multiple strategies fire on the same pair.</p>
+                                </div>
+                                <div class="bot-config-field" style="grid-column: 1 / -1;">
+                                    <label class="bot-toggle-row">
                                         <input type="checkbox" id="bot-cfg-mtf-enabled" checked>
                                         <span>🛡️ Enable Multi-Timeframe (MTF) 4h Trend Filter</span>
                                     </label>
-                                    <p class="field-hint">Enforces higher timeframe alignment: blocks counter-trend setups (e.g., skips shorts during a 4h Bull trend, skips longs during a 4h Bear trend).</p>
+                                    <p class="field-hint">Strategy-aware: trend and breakout setups must align with the higher timeframe; mean-reversion and order-flow setups may fade it.</p>
                                 </div>
                             </div>
                         </div>

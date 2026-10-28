@@ -15,6 +15,7 @@ from backend.binance_client import binance_client
 from backend.indicators import enrich_klines_dataframe
 from backend.screener import screener_engine
 from backend.trade_signals import scan_all_signals
+from backend.strategies import get_strategy_lab_snapshot
 from backend.auto_trader import auto_trader
 from backend.trade_journal import trade_journal
 from backend.macro_regime import get_macro_summary, calculate_market_breadth
@@ -262,8 +263,10 @@ def get_trade_signals(
     rr: str = Query("1:2.0", description="Risk:Reward ratio: 1:1.5, 1:2.0, 1:3.0"),
     lookback: int = Query(3, ge=1, le=10, description="Scan last N candles for signals"),
     min_confidence: int = Query(0, ge=0, le=100, description="Minimum confidence score (0-100)"),
+    min_quality: int = Query(0, ge=0, le=100, description="Minimum composite quality score (0-100)"),
     asset_class: str = Query("ALL", description="Filter by asset class: ALL, CRYPTO, STOCKS"),
     mtf_aligned: bool = Query(False, description="Filter by MTF trend aligned signals only"),
+    best_per_symbol: bool = Query(False, description="Keep only the strongest setup per symbol"),
 ):
     """Scan live data for active trade signals across Crypto and US Stocks with MTF Confluence."""
     try:
@@ -272,8 +275,10 @@ def get_trade_signals(
             rr_key=rr,
             lookback_bars=lookback,
             min_confidence=min_confidence,
+            min_quality=min_quality,
             asset_class=asset_class,
             mtf_aligned_only=mtf_aligned,
+            best_per_symbol=best_per_symbol,
         )
         return {
             "interval": interval,
@@ -281,9 +286,27 @@ def get_trade_signals(
             "lookback_bars": lookback,
             "asset_class": asset_class,
             "mtf_aligned_only": mtf_aligned,
+            "min_quality": min_quality,
+            "best_per_symbol": best_per_symbol,
             "total_signals": len(signals),
             "signals": signals,
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/strategies")
+def get_strategies(
+    interval: str = Query("1h", description="Timeframe used to rank strategies: 5m, 15m, 1h, 4h, 1d"),
+):
+    """Return the strategy registry with empirical, timeframe-aware edge statistics.
+
+    This powers the Strategy Lab UI. Stats come from a six-month walk-forward
+    backtest on the eight most liquid pairs and are ranked by profit factor and
+    average net return per trade.
+    """
+    try:
+        return get_strategy_lab_snapshot(interval=interval)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -556,6 +579,9 @@ class BotConfigUpdate(BaseModel):
     strategy_filter: Optional[str] = None
     leverage: Optional[int] = None
     min_confidence: Optional[int] = None
+    min_quality: Optional[int] = None
+    min_expectancy_r: Optional[float] = None
+    best_per_symbol: Optional[bool] = None
     max_positions: Optional[int] = None
     max_daily_loss: Optional[float] = None
     cooldown_hours: Optional[int] = None

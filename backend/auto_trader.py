@@ -90,6 +90,9 @@ class AutoTrader:
             "strategy_filter": DEFAULT_STRATEGY_FILTER,    # "ALL" or specific strategy name
             "leverage": 5,                 # Futures leverage (1-125)
             "min_confidence": 60,          # Minimum signal confidence (0-100)
+            "min_quality": 55,             # Minimum composite quality score (0-100)
+            "min_expectancy_r": 0.0,       # Require positive backtested edge per trade
+            "best_per_symbol": True,       # Only trade the strongest setup per symbol
             "max_positions": 3,            # Max concurrent open positions
             "max_daily_loss": 50,          # Stop trading if daily loss exceeds this
             "cooldown_hours": 4,           # Don't re-enter same symbol within N hours
@@ -337,7 +340,9 @@ class AutoTrader:
                 interval=interval,
                 lookback_bars=1,
                 min_confidence=min_conf,
+                min_quality=int(self._config.get("min_quality", 0)),
                 asset_class=asset_class_filter,
+                best_per_symbol=bool(self._config.get("best_per_symbol", True)),
             )
 
 
@@ -358,11 +363,25 @@ class AutoTrader:
                     signals_filtered += 1
                     continue
 
-                # MTF Trend Filter check
+                # MTF Trend Filter check — strategy-aware. Trend and breakout
+                # setups must align with the higher timeframe; mean-reversion
+                # and order-flow setups may deliberately fade the HTF trend.
                 if self._config.get("mtf_filter_enabled", True) and not sig.get("htf_aligned", True):
-                    bias = sig.get("htf_bias", "NEUTRAL")
-                    tf = sig.get("htf_interval", "4h")
-                    trade_journal.log_signal_filtered(sig["symbol"], f"Counter-trend vs {tf} {bias} trend")
+                    if sig.get("mtf_policy", "required") == "required":
+                        bias = sig.get("htf_bias", "NEUTRAL")
+                        tf = sig.get("htf_interval", "4h")
+                        trade_journal.log_signal_filtered(sig["symbol"], f"Counter-trend vs {tf} {bias} trend")
+                        signals_filtered += 1
+                        continue
+
+                # Empirical edge gate: skip strategies that lost money after
+                # fees and slippage over the six-month walk-forward test.
+                min_expectancy = float(self._config.get("min_expectancy_r", 0.0))
+                if float(sig.get("expectancy_r", 0.0)) <= min_expectancy:
+                    trade_journal.log_signal_filtered(
+                        sig["symbol"],
+                        f"Negative edge ({sig.get('strategy', '?')}: {sig.get('expectancy_r', 0):.2f}R)",
+                    )
                     signals_filtered += 1
                     continue
 

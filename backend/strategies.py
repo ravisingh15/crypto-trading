@@ -660,3 +660,246 @@ STRATEGIES = {
     },
 }
 
+
+# ============================================================================
+# EMPIRICAL PERFORMANCE REGISTRY
+# ============================================================================
+# Six-month walk-forward results on the 8 liquid pairs used by run_backtest.py.
+# Assumptions: 2.0x ATR stop, 3.5x ATR target (1:1.75 R:R), 48-bar max hold,
+# 0.075% taker fee + 0.03% slippage per side (0.21% round-trip), no overlapping
+# trades per symbol. Metrics are used to rank live signals by *actual* edge
+# instead of treating every strategy as equally trustworthy.
+#
+# avg_trade_pct is the net average return per trade after friction. It is the
+# primary metric for choosing a strategy's best timeframe because it directly
+# measures expectancy, while profit factor measures payoff asymmetry.
+STRATEGY_PERFORMANCE = {
+    'RSI Divergence (Long)': {
+        '1h': {'pf': 0.813, 'wr': 41.4, 'trades': 104, 'avg_trade_pct': -0.239, 'return_pct': -5.6, 'max_dd_pct': -15.5, 'sharpe': -1.89},
+        '4h': {'pf': 1.554, 'wr': 51.7, 'trades': 29, 'avg_trade_pct': 1.117, 'return_pct': 8.5, 'max_dd_pct': -6.5, 'sharpe': 4.17},
+    },
+    'Trend Pullback (Long)': {
+        '1h': {'pf': 1.265, 'wr': 41.2, 'trades': 97, 'avg_trade_pct': 0.274, 'return_pct': -0.6, 'max_dd_pct': -17.5, 'sharpe': 1.93},
+        '4h': {'pf': 0.949, 'wr': 45.5, 'trades': 22, 'avg_trade_pct': -0.136, 'return_pct': 2.6, 'max_dd_pct': -5.7, 'sharpe': -0.45},
+    },
+    'Mean Reversion (Long)': {
+        '1h': {'pf': 0.902, 'wr': 42.6, 'trades': 223, 'avg_trade_pct': -0.110, 'return_pct': -13.0, 'max_dd_pct': -21.7, 'sharpe': -0.93},
+        '4h': {'pf': 1.160, 'wr': 43.5, 'trades': 46, 'avg_trade_pct': 0.299, 'return_pct': 3.9, 'max_dd_pct': -14.3, 'sharpe': 1.43},
+    },
+    'EMA Golden Cross (Long)': {
+        '1h': {'pf': 1.000, 'wr': 36.9, 'trades': 344, 'avg_trade_pct': -0.000, 'return_pct': -36.3, 'max_dd_pct': -56.5, 'sharpe': -0.00},
+        '4h': {'pf': 1.334, 'wr': 42.4, 'trades': 92, 'avg_trade_pct': 0.623, 'return_pct': 10.0, 'max_dd_pct': -12.7, 'sharpe': 2.91},
+    },
+    'Supertrend Regime (Long)': {
+        '1h': {'pf': 1.023, 'wr': 42.0, 'trades': 312, 'avg_trade_pct': 0.025, 'return_pct': -11.6, 'max_dd_pct': -36.8, 'sharpe': 0.21},
+        '4h': {'pf': 1.027, 'wr': 35.4, 'trades': 65, 'avg_trade_pct': 0.051, 'return_pct': -3.4, 'max_dd_pct': -14.1, 'sharpe': 0.28},
+    },
+    'Squeeze Breakout (Long)': {
+        '1h': {'pf': 1.101, 'wr': 41.3, 'trades': 293, 'avg_trade_pct': 0.110, 'return_pct': -2.0, 'max_dd_pct': -25.8, 'sharpe': 0.93},
+        '4h': {'pf': 0.788, 'wr': 36.2, 'trades': 69, 'avg_trade_pct': -0.468, 'return_pct': -6.1, 'max_dd_pct': -13.0, 'sharpe': -2.89},
+    },
+    'Breakout Retest (Long)': {
+        '1h': {'pf': 1.205, 'wr': 43.8, 'trades': 329, 'avg_trade_pct': 0.212, 'return_pct': 13.8, 'max_dd_pct': -29.3, 'sharpe': 1.67},
+        '4h': {'pf': 0.511, 'wr': 24.6, 'trades': 69, 'avg_trade_pct': -1.343, 'return_pct': -22.1, 'max_dd_pct': -23.8, 'sharpe': -6.53},
+    },
+    'VWAP Reversion (Long)': {
+        '1h': {'pf': 1.131, 'wr': 48.0, 'trades': 102, 'avg_trade_pct': 0.139, 'return_pct': 8.6, 'max_dd_pct': -10.5, 'sharpe': 1.06},
+        '4h': {'pf': 1.167, 'wr': 50.0, 'trades': 16, 'avg_trade_pct': 0.288, 'return_pct': 1.3, 'max_dd_pct': -4.6, 'sharpe': 1.38},
+    },
+    'Volume Breakout (Long)': {
+        '1h': {'pf': 0.937, 'wr': 37.3, 'trades': 225, 'avg_trade_pct': -0.073, 'return_pct': -27.1, 'max_dd_pct': -36.6, 'sharpe': -0.64},
+        '4h': {'pf': 0.799, 'wr': 35.2, 'trades': 54, 'avg_trade_pct': -0.558, 'return_pct': -5.1, 'max_dd_pct': -6.9, 'sharpe': -2.66},
+    },
+    'Taker Pressure (Long)': {
+        '1h': {'pf': 0.877, 'wr': 43.9, 'trades': 346, 'avg_trade_pct': -0.135, 'return_pct': 0.4, 'max_dd_pct': -29.2, 'sharpe': -1.25},
+        '4h': {'pf': 0.647, 'wr': 25.6, 'trades': 43, 'avg_trade_pct': -0.916, 'return_pct': -15.7, 'max_dd_pct': -15.1, 'sharpe': -4.18},
+    },
+    'Oversold Dip Bounce (Long)': {
+        '1h': {'pf': 0.849, 'wr': 35.5, 'trades': 392, 'avg_trade_pct': -0.196, 'return_pct': -49.0, 'max_dd_pct': -56.9, 'sharpe': -1.58},
+        '4h': {'pf': 1.615, 'wr': 50.0, 'trades': 102, 'avg_trade_pct': 1.048, 'return_pct': 24.6, 'max_dd_pct': -17.0, 'sharpe': 4.08},
+    },
+    'Momentum Continuation (Long)': {
+        '1h': {'pf': 0.877, 'wr': 37.6, 'trades': 351, 'avg_trade_pct': -0.164, 'return_pct': -34.5, 'max_dd_pct': -47.5, 'sharpe': -1.21},
+        '4h': {'pf': 1.567, 'wr': 52.1, 'trades': 96, 'avg_trade_pct': 1.063, 'return_pct': 26.7, 'max_dd_pct': -18.7, 'sharpe': 4.00},
+    },
+    'RSI Divergence (Short)': {
+        '1h': {'pf': 0.784, 'wr': 37.6, 'trades': 125, 'avg_trade_pct': -0.268, 'return_pct': -15.2, 'max_dd_pct': -20.7, 'sharpe': -2.30},
+        '4h': {'pf': 1.852, 'wr': 47.6, 'trades': 21, 'avg_trade_pct': 1.364, 'return_pct': 3.4, 'max_dd_pct': -4.2, 'sharpe': 6.13},
+    },
+    'Breakout Retest (Short)': {
+        '1h': {'pf': 1.091, 'wr': 38.5, 'trades': 260, 'avg_trade_pct': 0.104, 'return_pct': -15.3, 'max_dd_pct': -48.4, 'sharpe': 0.81},
+        '4h': {'pf': 0.786, 'wr': 32.6, 'trades': 46, 'avg_trade_pct': -0.496, 'return_pct': -7.0, 'max_dd_pct': -11.1, 'sharpe': -2.05},
+    },
+    'Mean Reversion (Short)': {
+        '1h': {'pf': 1.101, 'wr': 42.2, 'trades': 204, 'avg_trade_pct': 0.114, 'return_pct': 8.4, 'max_dd_pct': -18.6, 'sharpe': 0.91},
+        '4h': {'pf': 1.125, 'wr': 34.0, 'trades': 47, 'avg_trade_pct': 0.255, 'return_pct': -6.2, 'max_dd_pct': -14.7, 'sharpe': 1.13},
+    },
+    'Momentum Continuation (Short)': {
+        '1h': {'pf': 0.772, 'wr': 35.4, 'trades': 322, 'avg_trade_pct': -0.286, 'return_pct': -37.0, 'max_dd_pct': -53.5, 'sharpe': -2.57},
+        '4h': {'pf': 0.331, 'wr': 24.4, 'trades': 41, 'avg_trade_pct': -2.097, 'return_pct': -15.0, 'max_dd_pct': -21.0, 'sharpe': -10.05},
+    },
+    'VWAP Reversion (Short)': {
+        '1h': {'pf': 0.960, 'wr': 38.5, 'trades': 96, 'avg_trade_pct': -0.046, 'return_pct': -3.2, 'max_dd_pct': -16.0, 'sharpe': -0.41},
+        '4h': {'pf': 1.223, 'wr': 41.7, 'trades': 24, 'avg_trade_pct': 0.432, 'return_pct': 1.9, 'max_dd_pct': -7.0, 'sharpe': 2.08},
+    },
+    'Squeeze Breakout (Short)': {
+        '1h': {'pf': 1.055, 'wr': 39.0, 'trades': 164, 'avg_trade_pct': 0.049, 'return_pct': -11.7, 'max_dd_pct': -38.1, 'sharpe': 0.54},
+        '4h': {'pf': 1.370, 'wr': 50.0, 'trades': 30, 'avg_trade_pct': 0.597, 'return_pct': 8.2, 'max_dd_pct': -10.2, 'sharpe': 4.04},
+    },
+    'Trend Pullback (Short)': {
+        '1h': {'pf': 0.479, 'wr': 35.8, 'trades': 67, 'avg_trade_pct': -0.596, 'return_pct': -13.0, 'max_dd_pct': -17.2, 'sharpe': -7.60},
+        '4h': {'pf': 1.053, 'wr': 46.1, 'trades': 13, 'avg_trade_pct': 0.093, 'return_pct': 1.4, 'max_dd_pct': -3.4, 'sharpe': 0.43},
+    },
+    'Taker Pressure (Short)': {
+        '1h': {'pf': 0.860, 'wr': 38.7, 'trades': 455, 'avg_trade_pct': -0.142, 'return_pct': -37.0, 'max_dd_pct': -42.0, 'sharpe': -1.46},
+        '4h': {'pf': 0.981, 'wr': 42.6, 'trades': 61, 'avg_trade_pct': -0.034, 'return_pct': -1.1, 'max_dd_pct': -7.5, 'sharpe': -0.18},
+    },
+    'Supertrend Regime (Short)': {
+        '1h': {'pf': 0.896, 'wr': 33.9, 'trades': 118, 'avg_trade_pct': -0.104, 'return_pct': -18.3, 'max_dd_pct': -31.3, 'sharpe': -1.29},
+        '4h': {'pf': 1.478, 'wr': 50.0, 'trades': 26, 'avg_trade_pct': 0.809, 'return_pct': 7.6, 'max_dd_pct': -5.7, 'sharpe': 3.20},
+    },
+    'EMA Death Cross (Short)': {
+        '1h': {'pf': 0.867, 'wr': 37.5, 'trades': 323, 'avg_trade_pct': -0.142, 'return_pct': -29.3, 'max_dd_pct': -42.0, 'sharpe': -1.38},
+        '4h': {'pf': 0.805, 'wr': 38.0, 'trades': 92, 'avg_trade_pct': -0.437, 'return_pct': -10.5, 'max_dd_pct': -21.5, 'sharpe': -1.94},
+    },
+    'Volume Breakout (Short)': {
+        '1h': {'pf': 0.762, 'wr': 33.6, 'trades': 229, 'avg_trade_pct': -0.292, 'return_pct': -37.3, 'max_dd_pct': -52.0, 'sharpe': -3.20},
+        '4h': {'pf': 0.834, 'wr': 35.9, 'trades': 64, 'avg_trade_pct': -0.329, 'return_pct': -5.5, 'max_dd_pct': -22.3, 'sharpe': -1.93},
+    },
+}
+
+
+def tier_from_performance(pf: float, trades: int) -> str:
+    """Map empirical profit factor + sample size to a transparent tier."""
+    if trades < 10:
+        return 'C'
+    if pf >= 1.40 and trades >= 20:
+        return 'A+'
+    if pf >= 1.15:
+        return 'A'
+    if pf >= 1.05:
+        return 'B+'
+    if pf >= 0.95:
+        return 'B'
+    return 'C'
+
+
+def _best_timeframe(performance: dict) -> str:
+    available = {tf: m for tf, m in performance.items() if m}
+    return max(available, key=lambda tf: (available[tf]['avg_trade_pct'], available[tf]['pf']))
+
+
+def get_strategy_stats(name: str, interval: str = '1h') -> dict:
+    """Return empirical stats for a strategy at (or closest to) a timeframe.
+
+    Proxy mapping keeps the UI honest when a user scans 5m/15m/1d, where we do
+    not yet have a statistically useful sample. The returned dict includes
+    ``is_proxy`` so callers can discount the result.
+    """
+    info = STRATEGIES.get(name, {})
+    performance = info.get('performance') or STRATEGY_PERFORMANCE.get(name, {})
+    if not performance:
+        return {
+            'pf': 1.0, 'wr': 40.0, 'trades': 0, 'avg_trade_pct': 0.0,
+            'return_pct': 0.0, 'max_dd_pct': 0.0, 'sharpe': 0.0,
+            'timeframe': interval, 'is_proxy': True, 'best_timeframe': interval,
+            'tier': 'C', 'sample_quality': 'LOW',
+        }
+
+    interval = str(interval).lower()
+    is_proxy = False
+    if interval in performance and performance[interval]:
+        stats_tf = interval
+    else:
+        if interval in ('5m', '15m', '30m', '2h', '3h'):
+            proxy_tf = '1h'
+        elif interval in ('1d', '1w'):
+            proxy_tf = '4h'
+        else:
+            proxy_tf = info.get('best_timeframe') or _best_timeframe(performance)
+        stats_tf = proxy_tf if proxy_tf in performance else _best_timeframe(performance)
+        is_proxy = True
+
+    stats = dict(performance[stats_tf])
+    trades = int(stats.get('trades', 0))
+    stats.update({
+        'timeframe': stats_tf,
+        'is_proxy': is_proxy,
+        'best_timeframe': info.get('best_timeframe') or _best_timeframe(performance),
+        'tier': tier_from_performance(float(stats.get('pf', 0)), trades),
+        'sample_quality': 'LOW' if trades < 20 else 'MEDIUM' if trades < 50 else 'HIGH',
+    })
+    return stats
+
+
+def get_mtf_policy(name: str) -> str:
+    """Trend/breakout setups require HTF alignment; mean-reversion/order-flow do not."""
+    strategy_type = STRATEGIES.get(name, {}).get('type', 'TREND')
+    return 'required' if strategy_type in ('TREND', 'BREAKOUT') else 'soft'
+
+
+def get_strategy_lab_snapshot(interval: str = '1h') -> dict:
+    """Serializable strategy registry snapshot for the Strategy Lab UI."""
+    rows = []
+    for name, info in STRATEGIES.items():
+        stats = get_strategy_stats(name, interval)
+        rows.append({
+            'name': name,
+            'direction': info.get('direction', 'LONG'),
+            'type': info.get('type', 'TREND'),
+            'description': info.get('description', ''),
+            'preferred_timeframe': info.get('best_timeframe', info.get('preferred_timeframe', '1h')),
+            'best_timeframe': info.get('best_timeframe', info.get('preferred_timeframe', '1h')),
+            'mtf_policy': get_mtf_policy(name),
+            'performance': info.get('performance', {}),
+            'active': {
+                'timeframe': stats['timeframe'],
+                'is_proxy': stats['is_proxy'],
+                'pf': round(float(stats['pf']), 3),
+                'wr': round(float(stats['wr']), 1),
+                'trades': int(stats['trades']),
+                'avg_trade_pct': round(float(stats['avg_trade_pct']), 3),
+                'return_pct': round(float(stats['return_pct']), 1),
+                'max_dd_pct': round(float(stats['max_dd_pct']), 1),
+                'sharpe': round(float(stats['sharpe']), 2),
+                'tier': stats['tier'],
+                'sample_quality': stats['sample_quality'],
+            },
+        })
+
+    rows.sort(key=lambda r: (r['active']['pf'], r['active']['avg_trade_pct']), reverse=True)
+    profitable = [r for r in rows if r['active']['pf'] > 1.0]
+    best = rows[0] if rows else None
+    return {
+        'interval': interval,
+        'summary': {
+            'total': len(rows),
+            'long': sum(1 for r in rows if r['direction'] == 'LONG'),
+            'short': sum(1 for r in rows if r['direction'] == 'SHORT'),
+            'profitable': len(profitable),
+            'avg_pf': round(sum(r['active']['pf'] for r in rows) / len(rows), 2) if rows else 0,
+            'best_strategy': best['name'] if best else None,
+            'best_pf': best['active']['pf'] if best else 0,
+            'best_timeframe': best['best_timeframe'] if best else None,
+        },
+        'strategies': rows,
+    }
+
+
+# Enrich the public registry with the empirical view. This keeps a single source
+# of truth while preserving backward-compatible fields used by older clients.
+for _name, _info in STRATEGIES.items():
+    _perf = STRATEGY_PERFORMANCE.get(_name)
+    if not _perf:
+        continue
+    _best_tf = _best_timeframe(_perf)
+    _best = _perf[_best_tf]
+    _info['performance'] = _perf
+    _info['best_timeframe'] = _best_tf
+    _info['preferred_timeframe'] = _best_tf
+    _info['historical_pf'] = round(float(_best['pf']), 3)
+    _info['historical_wr'] = round(float(_best['wr']), 1)
+    _info['historical_trades'] = int(_best['trades'])
+    _info['tier'] = tier_from_performance(float(_best['pf']), int(_best['trades']))
+    _info['sample_quality'] = 'LOW' if _best['trades'] < 20 else 'MEDIUM' if _best['trades'] < 50 else 'HIGH'
+

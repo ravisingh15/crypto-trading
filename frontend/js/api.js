@@ -86,15 +86,17 @@ class CryptoAPI {
         }
     }
 
-    async getTradeSignals(interval = "1h", rr = "1:2.0", lookback = 3, minConfidence = 0, assetClass = "ALL", mtfAligned = false) {
+    async getTradeSignals(interval = "1h", rr = "1:2.0", lookback = 3, minConfidence = 0, assetClass = "ALL", mtfAligned = false, minQuality = 0, bestPerSymbol = false) {
         try {
             const params = new URLSearchParams({
                 interval,
                 rr,
                 lookback,
                 min_confidence: minConfidence,
+                min_quality: minQuality,
                 asset_class: assetClass,
                 mtf_aligned: mtfAligned,
+                best_per_symbol: bestPerSymbol,
             });
             const response = await this._fetch(`${this.baseURL}/api/trade-signals?${params}`);
             if (!response.ok) throw new Error("Failed to fetch trade signals");
@@ -102,6 +104,18 @@ class CryptoAPI {
         } catch (error) {
             console.error("Backend trade-signals API error:", error);
             return { signals: [] };
+        }
+    }
+
+    async getStrategies(interval = "1h") {
+        try {
+            const params = new URLSearchParams({ interval });
+            const response = await this._fetch(`${this.baseURL}/api/strategies?${params}`);
+            if (!response.ok) throw new Error("Failed to fetch strategy lab data");
+            return await response.json();
+        } catch (error) {
+            console.error("Backend strategies API error:", error);
+            return { interval, summary: {}, strategies: [] };
         }
     }
 

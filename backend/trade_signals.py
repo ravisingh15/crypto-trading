@@ -11,7 +11,7 @@ import numpy as np
 
 from backend.binance_client import binance_client
 from backend.indicators import enrich_klines_dataframe
-from backend.strategies import STRATEGIES
+from backend.strategies import STRATEGIES, get_strategy_stats, get_mtf_policy
 from backend.macro_regime import (
     get_benchmark_dataframe,
     get_macro_summary,
@@ -283,6 +283,39 @@ def _calculate_signal_confidence(
     return max(15, min(score, 100))
 
 
+def _regime_fit(strategy_type: str, direction: str, regime: str) -> str:
+    """How well the instrument's current regime fits the strategy family."""
+    if not regime or regime == 'UNKNOWN':
+        return 'UNKNOWN'
+    regime = str(regime).upper()
+    if strategy_type == 'MEAN_REVERSION':
+        if regime in ('BULL_RANGE', 'BEAR_RANGE'):
+            return 'ALIGNED'
+        if regime in ('BULL_TREND', 'BEAR_TREND'):
+            return 'CONFLICT'
+        return 'NEUTRAL'
+    if direction == 'LONG':
+        if regime == 'BULL_TREND':
+            return 'ALIGNED'
+        if regime == 'BEAR_TREND':
+            return 'CONFLICT'
+    elif direction == 'SHORT':
+        if regime == 'BEAR_TREND':
+            return 'ALIGNED'
+        if regime == 'BULL_TREND':
+            return 'CONFLICT'
+    return 'NEUTRAL'
+
+
+def _quality_grade(score: float) -> str:
+    if score >= 80:
+        return 'A+'
+    if score >= 70:
+        return 'A'
+    if score >= 58:
+        return 'B'
+    return 'C'
+
 
 def scan_symbol_signals(
     symbol: str,
@@ -375,7 +408,9 @@ def scan_symbol_signals(
             htf_aligned = is_signal_aligned(direction, htf_bias)
 
             strat_type = strat_info.get('type', 'TREND')
-            strat_pref_tf = strat_info.get('preferred_timeframe', '1h')
+            strat_pref_tf = strat_info.get('best_timeframe', strat_info.get('preferred_timeframe', '1h'))
+            stats = get_strategy_stats(strat_name, interval)
+            mtf_policy = get_mtf_policy(strat_name)
 
             confidence = _calculate_signal_confidence(
                 df, idx, direction,
@@ -387,6 +422,44 @@ def scan_symbol_signals(
 
             # Candle age: how many bars ago was this signal?
             bars_ago = len(df) - 1 - idx
+
+            # Empirical edge: convert the strategy's backtested average trade
+            # return into R multiples using this setup's actual stop distance.
+            expectancy_r = 0.0
+            if sl_distance_pct > 0:
+                expectancy_r = float(stats.get('avg_trade_pct', 0.0)) / sl_distance_pct
+            expectancy_r = max(-3.0, min(3.0, expectancy_r))
+            edge_score = max(0.0, min(100.0, 50.0 + (expectancy_r * 50.0)))
+
+            # Freshness: a 3-bar-old signal should not outrank a live one.
+            freshness_score = max(20.0, 100.0 - (20.0 * bars_ago))
+
+            # Instrument regime fit (separate from the benchmark macro regime).
+            market_regime = str(row.get('regime', 'UNKNOWN'))
+            regime_fit = _regime_fit(strat_type, direction, market_regime)
+            regime_adj = 5.0 if regime_fit == 'ALIGNED' else -5.0 if regime_fit == 'CONFLICT' else 0.0
+
+            # Quality blends indicator confluence, empirical edge, freshness and
+            # regime fit. Confidence remains available for backward compatibility.
+            quality_score = (
+                (0.55 * confidence)
+                + (0.30 * edge_score)
+                + (0.15 * freshness_score)
+                + regime_adj
+            )
+
+            # Guardrails: never let a negative-expectancy or tiny-sample setup
+            # display an elite grade just because current-bar confluence is high.
+            trades = int(stats.get('trades', 0))
+            if expectancy_r < 0:
+                quality_score = min(quality_score, 69.0)
+            if float(stats.get('pf', 1.0)) < 0.95:
+                quality_score = min(quality_score, 57.0)
+            if trades < 10:
+                quality_score = min(quality_score, 64.0)
+
+            quality_score = int(round(max(0.0, min(100.0, quality_score))))
+            quality_grade = _quality_grade(quality_score)
 
             # Taker buy ratio for order flow context
             taker_ratio = None
@@ -402,12 +475,29 @@ def scan_symbol_signals(
                 'asset_class': asset_class,
                 'sector': sector,
                 'strategy': strat_name,
-                'strategy_tier': strat_info.get('tier', 'B'),
+                # ``tier`` is kept as an alias for older frontends; both values
+                # are derived from the timeframe-specific backtest below.
+                'tier': stats['tier'],
+                'strategy_tier': stats['tier'],
                 'strategy_type': strat_type,
                 'preferred_timeframe': strat_pref_tf,
                 'strategy_desc': strat_info.get('description', ''),
-                'historical_pf': strat_info.get('historical_pf', 1.0),
-                'historical_wr': strat_info.get('historical_wr', 40.0),
+                'historical_pf': round(float(stats.get('pf', 1.0)), 3),
+                'historical_wr': round(float(stats.get('wr', 40.0)), 1),
+                'historical_trades': int(stats.get('trades', 0)),
+                'historical_avg_trade_pct': round(float(stats.get('avg_trade_pct', 0.0)), 3),
+                'stats_timeframe': stats['timeframe'],
+                'stats_is_proxy': stats['is_proxy'],
+                'best_timeframe': stats['best_timeframe'],
+                'sample_quality': stats.get('sample_quality', 'LOW'),
+                'expectancy_r': round(expectancy_r, 3),
+                'edge_score': round(edge_score, 1),
+                'quality_score': quality_score,
+                'quality_grade': quality_grade,
+                'market_regime': market_regime,
+                'regime_fit': regime_fit,
+                'mtf_policy': mtf_policy,
+                'mtf_conflict': not htf_aligned,
                 'direction': direction,
                 'entry_price': round(entry_price, 6),
                 'stop_loss': round(sl_price, 6),
@@ -436,7 +526,17 @@ def scan_symbol_signals(
             }
             signals.append(signal_data)
 
-    return signals
+    # One signal per strategy per symbol: keep the freshest/highest-quality bar.
+    best_by_strategy = {}
+    for sig in signals:
+        prev = best_by_strategy.get(sig['strategy'])
+        if prev is None or (sig['quality_score'], -sig['bars_ago']) > (prev['quality_score'], -prev['bars_ago']):
+            best_by_strategy[sig['strategy']] = sig
+
+    return sorted(
+        best_by_strategy.values(),
+        key=lambda s: (-s['quality_score'], -s['confidence'], s['bars_ago']),
+    )
 
 
 def scan_all_signals(
@@ -447,10 +547,15 @@ def scan_all_signals(
     min_confidence: int = 0,
     asset_class: str = "ALL",
     mtf_aligned_only: bool = False,
+    min_quality: int = 0,
+    best_per_symbol: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Scan multiple symbols in parallel for active trade signals with macro context.
-    Returns a list of trade setups sorted by confidence score descending.
+
+    Results are ranked by ``quality_score`` (confluence + empirical edge +
+    freshness + regime fit), then confidence. ``best_per_symbol`` keeps only
+    the strongest setup per symbol so the bot cannot stack correlated trades.
     """
     # Refresh MTF cache for a fresh scan cycle
     clear_htf_cache()
@@ -482,7 +587,14 @@ def scan_all_signals(
 
     # Filter by minimum confidence
     if min_confidence > 0:
-        all_signals = [s for s in all_signals if s['confidence'] >= min_confidence]
+        all_signals = [s for s in all_signals if s.get('confidence', 0) >= min_confidence]
+
+    # Filter by minimum composite quality score
+    if min_quality > 0:
+        all_signals = [
+            s for s in all_signals
+            if s.get('quality_score', s.get('confidence', 0)) >= min_quality
+        ]
 
     # Filter by asset class if symbols were provided explicitly
     if asset_class.upper() != "ALL":
@@ -492,7 +604,25 @@ def scan_all_signals(
     if mtf_aligned_only:
         all_signals = [s for s in all_signals if s.get('htf_aligned', False)]
 
-    # Sort: confidence desc, then bars_ago asc (freshest first)
-    all_signals.sort(key=lambda x: (-x['confidence'], x['bars_ago']))
+    # Keep only the strongest setup per symbol (avoids correlated stacking).
+    if best_per_symbol:
+        best_by_symbol = {}
+        for sig in all_signals:
+            key = (
+                sig.get('quality_score', sig.get('confidence', 0)),
+                sig.get('confidence', 0),
+                -sig.get('bars_ago', 0),
+            )
+            current = best_by_symbol.get(sig['symbol'])
+            if current is None or key > current[0]:
+                best_by_symbol[sig['symbol']] = (key, sig)
+        all_signals = [entry[1] for entry in best_by_symbol.values()]
+
+    # Rank by empirical quality first, then indicator confidence and freshness.
+    all_signals.sort(key=lambda x: (
+        -x.get('quality_score', x.get('confidence', 0)),
+        -x.get('confidence', 0),
+        x.get('bars_ago', 0),
+    ))
 
     return all_signals

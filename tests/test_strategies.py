@@ -4,6 +4,11 @@ import numpy as np
 
 from backend.strategies import (
     STRATEGIES,
+    STRATEGY_PERFORMANCE,
+    get_strategy_stats,
+    get_mtf_policy,
+    get_strategy_lab_snapshot,
+    tier_from_performance,
     strat_trend_pullback_long,
     strat_trend_pullback_short,
     strat_squeeze_breakout_long,
@@ -142,3 +147,57 @@ class TestStrategyFunctions:
 
         assert mr_score >= 60, f"Mean reversion score {mr_score} should be >= 60 for high quality setup"
         assert mr_score > trend_score, f"MR score ({mr_score}) should exceed trend score ({trend_score})"
+
+
+class TestStrategyPerformanceRegistry:
+    def test_registry_is_enriched_with_empirical_stats(self):
+        for name in STRATEGY_PERFORMANCE:
+            assert name in STRATEGIES, f"{name} missing from STRATEGIES"
+            info = STRATEGIES[name]
+            assert info["tier"] in ("A+", "A", "B+", "B", "C")
+            assert info["best_timeframe"] in ("1h", "4h")
+            assert info["historical_trades"] > 0
+            assert info["sample_quality"] in ("LOW", "MEDIUM", "HIGH")
+
+    def test_get_strategy_stats_uses_exact_timeframe_then_proxy(self):
+        exact = get_strategy_stats("RSI Divergence (Short)", "4h")
+        assert exact["timeframe"] == "4h"
+        assert exact["is_proxy"] is False
+        assert exact["pf"] > 1.5
+        assert exact["tier"] == "A+"
+
+        proxy = get_strategy_stats("RSI Divergence (Short)", "5m")
+        assert proxy["is_proxy"] is True
+        assert proxy["timeframe"] == "1h"
+
+        fallback = get_strategy_stats("RSI Divergence (Short)", "1d")
+        assert fallback["is_proxy"] is True
+        assert fallback["timeframe"] == "4h"
+
+    def test_mtf_policy_is_strategy_aware(self):
+        assert get_mtf_policy("Trend Pullback (Long)") == "required"
+        assert get_mtf_policy("Breakout Retest (Long)") == "required"
+        assert get_mtf_policy("Mean Reversion (Long)") == "soft"
+        assert get_mtf_policy("Taker Pressure (Short)") == "soft"
+        assert get_mtf_policy("RSI Divergence (Short)") == "soft"
+
+    def test_tier_thresholds(self):
+        assert tier_from_performance(1.50, 25) == "A+"
+        assert tier_from_performance(1.50, 5) == "C"
+        assert tier_from_performance(1.20, 30) == "A"
+        assert tier_from_performance(1.06, 30) == "B+"
+        assert tier_from_performance(0.96, 30) == "B"
+        assert tier_from_performance(0.80, 30) == "C"
+
+    def test_strategy_lab_snapshot(self):
+        snap = get_strategy_lab_snapshot("4h")
+        assert snap["interval"] == "4h"
+        assert snap["summary"]["total"] == len(STRATEGIES)
+        assert snap["summary"]["long"] + snap["summary"]["short"] == len(STRATEGIES)
+        assert snap["summary"]["profitable"] > 0
+        assert snap["summary"]["best_strategy"]
+        assert len(snap["strategies"]) == len(STRATEGIES)
+        pfs = [row["active"]["pf"] for row in snap["strategies"]]
+        assert pfs == sorted(pfs, reverse=True)
+        assert all("performance" in row for row in snap["strategies"])
+        assert all("mtf_policy" in row for row in snap["strategies"])

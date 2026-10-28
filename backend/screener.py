@@ -86,6 +86,13 @@ def analyze_single_pair(
         ema_50 = float(latest["ema_50"]) if not np_isnan(latest["ema_50"]) else price
         rvol = float(latest["rvol"]) if not np_isnan(latest["rvol"]) else 1.0
         atr = float(latest["atr"]) if not np_isnan(latest["atr"]) else 0.0
+        regime = str(latest.get("regime", "UNKNOWN")) if "regime" in latest.index else "UNKNOWN"
+        atr_pct = round((atr / price) * 100, 2) if price > 0 and atr > 0 else 0.0
+        sparkline = [
+            round(float(v), 6)
+            for v in df["close"].tail(24).tolist()
+            if not np_isnan(v)
+        ]
 
         is_stock = binance_client.is_stock_symbol(symbol)
         asset_class = "STOCK" if is_stock else "CRYPTO"
@@ -188,6 +195,9 @@ def analyze_single_pair(
             "ema_50": round(ema_50, 4),
             "rvol": round(rvol, 2),
             "atr": round(atr, 4),
+            "atr_pct": atr_pct,
+            "regime": regime,
+            "sparkline": sparkline,
             "rs_ratio": rs_data["rs_ratio"],
             "rs_rating": rs_data["rs_rating"],
             "rs_status": rs_data["rs_status"],

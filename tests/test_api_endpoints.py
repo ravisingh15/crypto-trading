@@ -44,6 +44,10 @@ class TestAPIEndpoints:
             assert item["asset_class"] == "STOCK"
             assert "score" in item
             assert "recommendation" in item
+            assert "regime" in item
+            assert "atr_pct" in item
+            assert isinstance(item["sparkline"], list)
+            assert len(item["sparkline"]) <= 24
 
     def test_klines_friendly_ticker(self, client):
         r = client.get("/api/klines/TSLA?interval=1h&limit=10")
@@ -72,6 +76,39 @@ class TestAPIEndpoints:
         data_sig = r_sig.json()
         assert data_sig["interval"] == "5m"
         assert "signals" in data_sig
+
+    def test_strategy_lab_endpoint(self, client):
+        r = client.get("/api/strategies?interval=1h")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["interval"] == "1h"
+        assert data["summary"]["total"] == len(data["strategies"])
+        assert data["summary"]["total"] > 0
+        assert "best_strategy" in data["summary"]
+        first = data["strategies"][0]
+        assert {"name", "direction", "type", "performance", "active", "mtf_policy"} <= set(first)
+        assert first["active"]["tier"] in ("A+", "A", "B+", "B", "C")
+        assert first["active"]["pf"] >= data["strategies"][-1]["active"]["pf"]
+
+        r4 = client.get("/api/strategies?interval=4h")
+        assert r4.status_code == 200
+        assert r4.json()["interval"] == "4h"
+
+    def test_trade_signals_quality_filters(self, client):
+        r = client.get("/api/trade-signals?interval=1h&asset_class=CRYPTO&min_quality=70&best_per_symbol=true")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["min_quality"] == 70
+        assert data["best_per_symbol"] is True
+        symbols = [s["symbol"] for s in data["signals"]]
+        assert len(symbols) == len(set(symbols))
+        for sig in data["signals"]:
+            assert sig["quality_score"] >= 70
+            assert 0 <= sig["quality_score"] <= 100
+            assert sig["quality_grade"] in ("A+", "A", "B", "C")
+            assert "expectancy_r" in sig
+            assert sig["mtf_policy"] in ("required", "soft")
+            assert sig["stats_timeframe"] in ("1h", "4h")
 
 
     def test_bot_status(self, client):

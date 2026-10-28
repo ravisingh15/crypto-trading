@@ -78,6 +78,34 @@ document.addEventListener("DOMContentLoaded", () => {
             refreshData(true);
         });
     }
+    const btnExportScreener = document.getElementById("btn-export-screener");
+    if (btnExportScreener) {
+        btnExportScreener.addEventListener("click", () => {
+            if (!currentScreenerData.length) {
+                showToast('No screener data to export yet', 'warning', '⚠️');
+                return;
+            }
+            downloadCSV(`cypherscreen-screener-${timeframeSelect.value}.csv`, currentScreenerData.map(item => ({
+                symbol: item.symbol,
+                ticker: item.stock_ticker || '',
+                company: item.company_name || '',
+                asset_class: item.asset_class,
+                category: item.category,
+                price: item.price,
+                change_24h_pct: item.price_change_24h,
+                rsi: item.rsi,
+                macd_hist: item.macd_hist,
+                rvol: item.rvol,
+                rs_rating: item.rs_rating,
+                rs_status: item.rs_status,
+                volume_24h_usdt: item.quote_volume_24h,
+                regime: item.regime || '',
+                atr_pct: item.atr_pct || 0,
+                score: item.score,
+                recommendation: item.recommendation,
+            })));
+        });
+    }
     if (autoRefreshSelect) {
         autoRefreshSelect.addEventListener("change", setupAutoRefresh);
     }
@@ -206,6 +234,63 @@ document.addEventListener("DOMContentLoaded", () => {
         if (countEl) countEl.textContent = getWatchlist().length;
     }
     updateWatchlistCount();
+
+    // ----------------------------------------------------
+    // Sparkline & CSV Export Helpers
+    // ----------------------------------------------------
+    function renderSparkline(values, width = 92, height = 28) {
+        if (!Array.isArray(values) || values.length < 2) {
+            return '<span class="sparkline-empty">—</span>';
+        }
+        const nums = values.map(Number).filter(v => Number.isFinite(v));
+        if (nums.length < 2) return '<span class="sparkline-empty">—</span>';
+
+        const min = Math.min(...nums);
+        const max = Math.max(...nums);
+        const range = max - min || 1;
+        const stepX = width / (nums.length - 1);
+        const points = nums.map((v, i) => {
+            const x = i * stepX;
+            const y = height - 3 - ((v - min) / range) * (height - 6);
+            return `${x.toFixed(1)},${y.toFixed(1)}`;
+        });
+        const rising = nums[nums.length - 1] >= nums[0];
+        const stroke = rising ? 'var(--green-bull)' : 'var(--red-bear)';
+        const fill = rising ? 'rgba(0,245,160,0.12)' : 'rgba(255,73,92,0.12)';
+        const areaPoints = `0,${height} ${points.join(' ')} ${width},${height}`;
+
+        return `<svg class="sparkline ${rising ? 'up' : 'down'}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" preserveAspectRatio="none" aria-label="${rising ? 'uptrend' : 'downtrend'}">
+            <polygon points="${areaPoints}" fill="${fill}"></polygon>
+            <polyline points="${points.join(' ')}" fill="none" stroke="${stroke}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></polyline>
+        </svg>`;
+    }
+
+    function downloadCSV(filename, rows) {
+        if (!rows || rows.length === 0) {
+            showToast('Nothing to export', 'warning', '⚠️');
+            return;
+        }
+        const headers = Object.keys(rows[0]);
+        const escape = (val) => {
+            if (val === null || val === undefined) return '';
+            const str = String(val);
+            return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+        };
+        const csv = [
+            headers.join(','),
+            ...rows.map(row => headers.map(h => escape(row[h])).join(',')),
+        ].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        showToast(`Exported ${rows.length} rows to <strong>${filename}</strong>`, 'success', '⬇️');
+    }
 
     // ----------------------------------------------------
     // Quick Presets Filter State & Listeners
@@ -407,7 +492,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (isManual || currentScreenerData.length === 0) {
             tableBody.innerHTML = `
                 <tr>
-                    <td colspan="12" class="loading-cell">
+                    <td colspan="14" class="loading-cell">
                         <div class="spinner"></div> Scanning Binance pairs &amp; evaluating macro trend regimes...
                     </td>
                 </tr>
@@ -472,7 +557,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderTable() {
         if (!currentScreenerData || currentScreenerData.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="13" style="text-align:center;">No assets matched the filter criteria.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="14" style="text-align:center;">No assets matched the filter criteria.</td></tr>`;
             recordsCount.textContent = "0 Pairs";
             return;
         }
@@ -538,7 +623,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (filtered.length === 0 && currentPreset === "WATCHLIST") {
             tableBody.innerHTML = `
                 <tr>
-                    <td colspan="13" style="text-align:center; padding: 36px 16px; color: var(--text-muted);">
+                    <td colspan="14" style="text-align:center; padding: 36px 16px; color: var(--text-muted);">
                         <div style="font-size: 24px; margin-bottom: 8px;">⭐</div>
                         <strong style="color: var(--text-primary); font-size: 14px;">Your Watchlist is Empty</strong>
                         <p style="margin-top: 4px; font-size: 12px;">Click the star icon (★) in the first column of any pair to pin it here.</p>
@@ -606,6 +691,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <td><span class="badge badge-neutral">${item.category}</span></td>
                     <td style="font-family: monospace;">$${item.price < 1 ? item.price : item.price.toLocaleString()}</td>
                     <td class="${priceChangeClass}">${priceChangeSign}${item.price_change_24h}%</td>
+                    <td class="sparkline-cell">${renderSparkline(item.sparkline)}</td>
                     <td>
                         <div class="rsi-visual-cell">
                             <div class="rsi-num-row">
@@ -842,6 +928,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const screenerTableSection = document.getElementById('screener-table-section');
     const highDeltaPanel = document.getElementById('high-delta-panel');
     const signalsPanel = document.getElementById('signals-panel');
+    const strategyLabPanel = document.getElementById('strategy-lab-panel');
     const walletPanel = document.getElementById('wallet-panel');
     const botPanel = document.getElementById('bot-panel');
 
@@ -859,6 +946,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (screenerTableSection) screenerTableSection.style.display = 'none';
         if (highDeltaPanel) highDeltaPanel.style.display = 'none';
         if (signalsPanel) signalsPanel.style.display = 'none';
+        if (strategyLabPanel) strategyLabPanel.style.display = 'none';
         if (walletPanel) walletPanel.style.display = 'none';
         if (botPanel) botPanel.style.display = 'none';
 
@@ -874,6 +962,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (signalsPanel) signalsPanel.style.display = '';
             if (!signalsScanDone) {
                 scanTradeSignals();
+            }
+        } else if (tab === 'strategy-lab') {
+            if (strategyLabPanel) strategyLabPanel.style.display = '';
+            if (!strategyLabLoadedOnce) {
+                loadStrategyLab();
             }
         } else if (tab === 'wallet') {
             if (walletPanel) walletPanel.style.display = '';
@@ -904,12 +997,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const signalSearchInput = document.getElementById('signal-search-input');
     const signalMtfFilter = document.getElementById('signal-mtf-filter');
     const signalTierFilter = document.getElementById('signal-tier-filter');
+    const qualitySelect = document.getElementById('quality-select');
+    const btnExportSignals = document.getElementById('btn-export-signals');
     const signalCardsGrid = document.getElementById('signal-cards-grid');
     const signalRecordsCount = document.getElementById('signal-records-count');
     const signalCountBadge = document.getElementById('signal-count-badge');
 
     let signalsScanDone = false;
     let currentSignals = [];
+    let lastFilteredSignals = [];
 
     btnScanSignals.addEventListener('click', scanTradeSignals);
 
@@ -946,7 +1042,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btnScanSignals.innerHTML = '<span class="scan-icon">🎯</span> Scan Now';
     }
 
-    function renderSignalCards() {
+    function getFilteredSignals() {
         let filtered = [...currentSignals];
 
         // Search text filter
@@ -977,15 +1073,37 @@ document.addEventListener("DOMContentLoaded", () => {
             filtered = filtered.filter(s => s.htf_bias === 'BEAR');
         }
 
-        // Tier / Profitability Filter
-        const tierVal = signalTierFilter ? signalTierFilter.value : 'ALL';
-        if (tierVal === 'PROFITABLE') {
-            filtered = filtered.filter(s => s.tier === 'A+' || s.tier === 'A' || s.tier === 'B+' || (s.historical_pf && s.historical_pf >= 1.0));
-        } else if (tierVal === 'A_PLUS') {
-            filtered = filtered.filter(s => s.tier === 'A+');
-        } else if (tierVal === 'TIER_A') {
-            filtered = filtered.filter(s => s.tier === 'A+' || s.tier === 'A');
+        // Composite quality filter
+        const minQuality = parseInt(qualitySelect ? qualitySelect.value : '0', 10) || 0;
+        if (minQuality > 0) {
+            filtered = filtered.filter(s => (s.quality_score || 0) >= minQuality);
         }
+
+        // Tier / Profitability / Edge Filter
+        const tierVal = signalTierFilter ? signalTierFilter.value : 'ALL';
+        const baseTier = (s) => String(s.strategy_tier || s.tier || 'C').toUpperCase().split(/[\s(]/)[0];
+        if (tierVal === 'PROFITABLE') {
+            filtered = filtered.filter(s => (s.historical_pf || 0) >= 1.0);
+        } else if (tierVal === 'A') {
+            filtered = filtered.filter(s => ['A+', 'A'].includes(baseTier(s)));
+        } else if (tierVal === 'QUALITY') {
+            filtered = filtered.filter(s => (s.quality_score || 0) >= 70);
+        } else if (tierVal === 'EDGE') {
+            filtered = filtered.filter(s => (s.expectancy_r || 0) >= 0);
+        }
+
+        filtered.sort((a, b) =>
+            (b.quality_score || 0) - (a.quality_score || 0) ||
+            (b.confidence || 0) - (a.confidence || 0) ||
+            (a.bars_ago || 0) - (b.bars_ago || 0)
+        );
+
+        return filtered;
+    }
+
+    function renderSignalCards() {
+        const filtered = getFilteredSignals();
+        lastFilteredSignals = filtered;
 
         signalRecordsCount.textContent = `${filtered.length} Active Signal${filtered.length !== 1 ? 's' : ''}`;
         signalCountBadge.textContent = filtered.length;
@@ -1021,15 +1139,36 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             const mtfBadge = `<span class="mtf-badge ${mtfClass}" title="Higher Timeframe (${sig.htf_interval || '4h'}) Trend: ${sig.htf_bias || 'NEUTRAL'}">${mtfIcon} 4h: ${sig.htf_bias || 'NEUTRAL'}</span>`;
 
-            // Strategy Tier Badge
-            const tier = sig.tier || 'B';
+            // Strategy Tier Badge — backend sends strategy_tier (timeframe-aware).
+            const tierRaw = String(sig.strategy_tier || sig.tier || 'C').trim();
+            const tier = tierRaw.toUpperCase().split(/[\s(]/)[0];
             let tierCssClass = 'tier-b';
             if (tier === 'A+') tierCssClass = 'tier-a-plus';
             else if (tier === 'A') tierCssClass = 'tier-a';
             else if (tier === 'B+') tierCssClass = 'tier-b-plus';
             else if (tier === 'C') tierCssClass = 'tier-c';
-            const pfText = sig.historical_pf ? `PF ${sig.historical_pf.toFixed(2)}` : 'PF 1.00';
-            const tierBadge = `<span class="tier-badge ${tierCssClass}" title="Strategy Tier ${tier} (Backtested PF: ${pfText})">★ Tier ${tier} · ${pfText}</span>`;
+            const statsTf = String(sig.stats_timeframe || sig.preferred_timeframe || '1h').toUpperCase();
+            const proxyTag = sig.stats_is_proxy ? ' · proxy' : '';
+            const pfText = sig.historical_pf ? `PF ${Number(sig.historical_pf).toFixed(2)}` : 'PF 1.00';
+            const wrText = sig.historical_wr ? `WR ${sig.historical_wr}%` : '';
+            const tradesText = sig.historical_trades ? `${sig.historical_trades} trades` : '';
+            const tierBadge = `<span class="tier-badge ${tierCssClass}" title="${sig.strategy || 'Strategy'} — ${statsTf} backtest: ${pfText}, ${wrText}, ${tradesText}${proxyTag}">★ ${tier} · ${pfText} · ${statsTf}${proxyTag}</span>`;
+
+            // Composite quality badge
+            const qualityScore = Math.round(sig.quality_score || 0);
+            const qualityGrade = sig.quality_grade || (qualityScore >= 80 ? 'A+' : qualityScore >= 70 ? 'A' : qualityScore >= 58 ? 'B' : 'C');
+            const qualityClass = qualityGrade === 'A+' ? 'a-plus' : qualityGrade === 'A' ? 'a' : qualityGrade === 'B' ? 'b' : 'c';
+            const qualityBadge = `<span class="quality-badge quality-${qualityClass}" title="Composite quality: 55% confluence + 30% empirical edge + 15% freshness + regime fit">Q ${qualityScore} · ${qualityGrade}</span>`;
+
+            // Edge / regime context
+            const expectancyR = Number(sig.expectancy_r || 0);
+            const edgeClass = expectancyR >= 0 ? 'positive' : 'negative';
+            const edgeText = `${expectancyR >= 0 ? '+' : ''}${expectancyR.toFixed(2)}R`;
+            const regimeFit = sig.regime_fit || 'UNKNOWN';
+            const regimeIcon = regimeFit === 'ALIGNED' ? '✅' : regimeFit === 'CONFLICT' ? '⚠️' : '➖';
+            const mtfPolicy = sig.mtf_policy || 'required';
+            const mtfPolicyLabel = mtfPolicy === 'required' ? 'MTF Required' : 'MTF Soft';
+            const sampleQuality = sig.sample_quality || 'LOW';
 
             // Freshness
             let freshnessClass, freshnessLabel;
@@ -1068,6 +1207,7 @@ document.addEventListener("DOMContentLoaded", () => {
                                     <span class="signal-symbol">${displayName}</span>
                                     <span class="badge-asset ${assetBadgeClass}">${assetBadgeText}</span>
                                     ${tierBadge}
+                                    ${qualityBadge}
                                 </div>
                                 ${companyName ? `<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${companyName}</div>` : ''}
                             </div>
@@ -1108,6 +1248,23 @@ document.addEventListener("DOMContentLoaded", () => {
                             </div>
                             <span class="confidence-label">${sig.confidence}%</span>
                         </div>
+
+                        <div class="quality-section">
+                            <div class="quality-header">
+                                <span>Composite Quality</span>
+                                <span class="quality-grade quality-${qualityClass}">${qualityGrade}</span>
+                                <span class="quality-score">${qualityScore}/100</span>
+                            </div>
+                            <div class="confidence-bar-track">
+                                <div class="confidence-bar-fill quality-${qualityClass}" style="width:${qualityScore}%"></div>
+                            </div>
+                            <div class="quality-metrics">
+                                <span class="quality-metric ${edgeClass}">Edge ${edgeText}</span>
+                                <span class="quality-metric">${regimeIcon} ${regimeFit}</span>
+                                <span class="quality-metric">${mtfPolicyLabel}</span>
+                                <span class="quality-metric">Sample ${sampleQuality}</span>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="signal-card-footer">
@@ -1122,7 +1279,9 @@ document.addEventListener("DOMContentLoaded", () => {
                         <div class="signal-meta-row">
                             <span class="signal-meta-item">RSI: ${sig.rsi || '—'}</span>
                             <span class="signal-meta-item">RVOL: ${sig.rvol || '—'}x</span>
-                            ${sig.historical_wr ? `<span class="signal-meta-item" style="color:var(--accent-cyan); font-weight:600;">WR: ${sig.historical_wr}%</span>` : ''}
+                            <span class="signal-meta-item" style="color:var(--accent-cyan); font-weight:600;">${statsTf} PF: ${sig.historical_pf || '—'}</span>
+                            <span class="signal-meta-item">WR: ${sig.historical_wr || '—'}%</span>
+                            <span class="signal-meta-item">N: ${sig.historical_trades || 0}</span>
                         </div>
                     </div>
 
@@ -1130,7 +1289,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <button class="btn-view-signal-chart" data-symbol="${sig.symbol}" data-strategy="${sig.strategy}" data-direction="${sig.direction}" data-entry="${sig.entry_price}" data-sl="${sig.stop_loss}" data-tp="${sig.take_profit}" data-asset="${sig.asset_class}" data-company="${companyName}">
                             📈 Chart
                         </button>
-                        <button class="btn-copy-setup" data-symbol="${sig.symbol}" data-strategy="${sig.strategy}" data-direction="${sig.direction}" data-entry="${sig.entry_price}" data-sl="${sig.stop_loss}" data-tp="${sig.take_profit}" data-rr="${sig.rr_ratio}" title="Copy complete trade setup">
+                        <button class="btn-copy-setup" data-symbol="${sig.symbol}" data-strategy="${sig.strategy}" data-direction="${sig.direction}" data-entry="${sig.entry_price}" data-sl="${sig.stop_loss}" data-tp="${sig.take_profit}" data-rr="${sig.rr_ratio}" data-tier="${tier}" data-quality="${qualityScore}" data-edge="${expectancyR}" title="Copy complete trade setup">
                             📋 Copy
                         </button>
                         <a href="${getBinanceTradeUrl(sig.symbol, false)}" target="_blank" rel="noopener noreferrer" class="btn-binance-link" title="Open on Binance">
@@ -1144,7 +1303,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Attach Copy Setup click listeners
         document.querySelectorAll('#signal-cards-grid .btn-copy-setup').forEach(btn => {
             btn.addEventListener('click', () => {
-                const text = `[CYPHERSCREEN] ${btn.dataset.symbol} ${btn.dataset.direction} | Strategy: ${btn.dataset.strategy} | Entry: $${btn.dataset.entry} | SL: $${btn.dataset.sl} | TP: $${btn.dataset.tp} | R:R ${btn.dataset.rr}`;
+                const text = `[CYPHERSCREEN] ${btn.dataset.symbol} ${btn.dataset.direction} | Strategy: ${btn.dataset.strategy} (Tier ${btn.dataset.tier}, Quality ${btn.dataset.quality}) | Edge: ${btn.dataset.edge}R | Entry: $${btn.dataset.entry} | SL: $${btn.dataset.sl} | TP: $${btn.dataset.tp} | R:R ${btn.dataset.rr}`;
                 navigator.clipboard.writeText(text).then(() => {
                     const original = btn.innerHTML;
                     btn.innerHTML = '✓ Copied';
@@ -1195,6 +1354,223 @@ document.addEventListener("DOMContentLoaded", () => {
     if (signalSearchInput) signalSearchInput.addEventListener('input', renderSignalCards);
     if (signalMtfFilter) signalMtfFilter.addEventListener('change', renderSignalCards);
     if (signalTierFilter) signalTierFilter.addEventListener('change', renderSignalCards);
+    if (qualitySelect) qualitySelect.addEventListener('change', renderSignalCards);
+
+    if (btnExportSignals) {
+        btnExportSignals.addEventListener('click', () => {
+            const rows = (lastFilteredSignals.length ? lastFilteredSignals : getFilteredSignals()).map(s => ({
+                symbol: s.symbol,
+                ticker: s.stock_ticker || '',
+                asset_class: s.asset_class,
+                direction: s.direction,
+                strategy: s.strategy,
+                strategy_type: s.strategy_type || '',
+                tier: s.strategy_tier || s.tier || '',
+                quality_score: s.quality_score || 0,
+                quality_grade: s.quality_grade || '',
+                confidence: s.confidence,
+                expectancy_r: s.expectancy_r || 0,
+                edge_score: s.edge_score || 0,
+                entry_price: s.entry_price,
+                stop_loss: s.stop_loss,
+                take_profit: s.take_profit,
+                rr_ratio: s.rr_ratio,
+                stats_timeframe: s.stats_timeframe || '',
+                stats_is_proxy: s.stats_is_proxy || false,
+                historical_pf: s.historical_pf || 0,
+                historical_wr: s.historical_wr || 0,
+                historical_trades: s.historical_trades || 0,
+                market_regime: s.market_regime || '',
+                regime_fit: s.regime_fit || '',
+                mtf_policy: s.mtf_policy || '',
+                mtf_aligned: s.htf_aligned,
+                bars_ago: s.bars_ago,
+            }));
+            downloadCSV(`cypherscreen-signals-${signalTimeframeSelect.value}.csv`, rows);
+        });
+    }
+
+    // ================================================
+    // Strategy Lab Logic
+    // ================================================
+    const strategyLabSearch = document.getElementById('strategy-lab-search');
+    const strategyLabTimeframe = document.getElementById('strategy-lab-timeframe');
+    const strategyLabType = document.getElementById('strategy-lab-type');
+    const strategyLabFilter = document.getElementById('strategy-lab-filter');
+    const btnRefreshStrategies = document.getElementById('btn-refresh-strategies');
+    const btnExportStrategies = document.getElementById('btn-export-strategies');
+    const strategyLabCount = document.getElementById('strategy-lab-count');
+    const strategyLabBody = document.getElementById('strategy-lab-body');
+    const labTotal = document.getElementById('lab-total');
+    const labTotalSub = document.getElementById('lab-total-sub');
+    const labProfitable = document.getElementById('lab-profitable');
+    const labProfitableSub = document.getElementById('lab-profitable-sub');
+    const labAvgPf = document.getElementById('lab-avg-pf');
+    const labBest = document.getElementById('lab-best');
+    const labBestSub = document.getElementById('lab-best-sub');
+
+    let strategyLabData = null;
+    let strategyLabLoadedOnce = false;
+    let lastFilteredStrategies = [];
+
+    if (btnRefreshStrategies) btnRefreshStrategies.addEventListener('click', () => loadStrategyLab(true));
+    if (strategyLabTimeframe) strategyLabTimeframe.addEventListener('change', () => loadStrategyLab(true));
+    if (strategyLabSearch) strategyLabSearch.addEventListener('input', renderStrategyLab);
+    if (strategyLabType) strategyLabType.addEventListener('change', renderStrategyLab);
+    if (strategyLabFilter) strategyLabFilter.addEventListener('change', renderStrategyLab);
+
+    if (btnExportStrategies) {
+        btnExportStrategies.addEventListener('click', () => {
+            const rows = lastFilteredStrategies.map(r => ({
+                strategy: r.name,
+                direction: r.direction,
+                type: r.type,
+                best_timeframe: r.best_timeframe,
+                pf_1h: r.performance?.['1h']?.pf ?? '',
+                wr_1h: r.performance?.['1h']?.wr ?? '',
+                trades_1h: r.performance?.['1h']?.trades ?? '',
+                pf_4h: r.performance?.['4h']?.pf ?? '',
+                wr_4h: r.performance?.['4h']?.wr ?? '',
+                trades_4h: r.performance?.['4h']?.trades ?? '',
+                active_timeframe: r.active?.timeframe || '',
+                active_is_proxy: r.active?.is_proxy || false,
+                active_pf: r.active?.pf ?? '',
+                active_wr: r.active?.wr ?? '',
+                active_trades: r.active?.trades ?? '',
+                avg_trade_pct: r.active?.avg_trade_pct ?? '',
+                max_dd_pct: r.active?.max_dd_pct ?? '',
+                sharpe: r.active?.sharpe ?? '',
+                tier: r.active?.tier || '',
+                sample_quality: r.active?.sample_quality || '',
+                mtf_policy: r.mtf_policy,
+                description: r.description,
+            }));
+            downloadCSV(`cypherscreen-strategy-lab-${strategyLabTimeframe ? strategyLabTimeframe.value : '1h'}.csv`, rows);
+        });
+    }
+
+    async function loadStrategyLab(force = false) {
+        if (strategyLabBody && (!strategyLabData || force)) {
+            strategyLabBody.innerHTML = `
+                <tr>
+                    <td colspan="14" class="loading-cell">
+                        <div class="spinner"></div> Loading six-month walk-forward strategy results...
+                    </td>
+                </tr>
+            `;
+        }
+        if (btnRefreshStrategies) {
+            btnRefreshStrategies.disabled = true;
+            btnRefreshStrategies.textContent = '⏳ Loading...';
+        }
+
+        const interval = strategyLabTimeframe ? strategyLabTimeframe.value : '1h';
+        const data = await window.cryptoAPI.getStrategies(interval);
+        strategyLabData = data;
+        strategyLabLoadedOnce = true;
+        renderStrategyLab();
+
+        if (btnRefreshStrategies) {
+            btnRefreshStrategies.disabled = false;
+            btnRefreshStrategies.innerHTML = '<span class="scan-icon">🧪</span> Refresh Lab';
+        }
+    }
+
+    function renderStrategyLab() {
+        if (!strategyLabData) return;
+
+        const summary = strategyLabData.summary || {};
+        const total = summary.total || 0;
+        if (labTotal) labTotal.textContent = total || '—';
+        if (labTotalSub) labTotalSub.textContent = `${summary.long || 0} Long / ${summary.short || 0} Short`;
+        if (labProfitable) labProfitable.textContent = `${summary.profitable || 0}/${total || 0}`;
+        if (labProfitableSub) labProfitableSub.textContent = total ? `${Math.round((summary.profitable || 0) / total * 100)}% of strategies` : 'PF > 1.0';
+        if (labAvgPf) labAvgPf.textContent = summary.avg_pf != null ? Number(summary.avg_pf).toFixed(2) : '—';
+        if (labBest) labBest.textContent = summary.best_strategy || '—';
+        if (labBestSub) labBestSub.textContent = summary.best_strategy ? `${String(summary.best_timeframe || '').toUpperCase()} · PF ${Number(summary.best_pf || 0).toFixed(2)}` : 'Highest risk-adjusted edge';
+
+        const query = strategyLabSearch ? strategyLabSearch.value.trim().toLowerCase() : '';
+        const typeVal = strategyLabType ? strategyLabType.value : 'ALL';
+        const showVal = strategyLabFilter ? strategyLabFilter.value : 'ALL';
+
+        let rows = [...(strategyLabData.strategies || [])];
+        if (query) {
+            rows = rows.filter(r => `${r.name} ${r.type} ${r.description}`.toLowerCase().includes(query));
+        }
+        if (typeVal !== 'ALL') {
+            rows = rows.filter(r => r.type === typeVal);
+        }
+        if (showVal === 'PROFITABLE') {
+            rows = rows.filter(r => Number(r.active?.pf || 0) >= 1.0);
+        } else if (showVal === 'POSITIVE_EDGE') {
+            rows = rows.filter(r => Number(r.active?.avg_trade_pct || 0) > 0);
+        }
+
+        rows.sort((a, b) =>
+            Number(b.active?.pf || 0) - Number(a.active?.pf || 0) ||
+            Number(b.active?.avg_trade_pct || 0) - Number(a.active?.avg_trade_pct || 0)
+        );
+        lastFilteredStrategies = rows;
+
+        if (strategyLabCount) {
+            strategyLabCount.textContent = `${rows.length} Strateg${rows.length === 1 ? 'y' : 'ies'}`;
+        }
+
+        if (!strategyLabBody) return;
+        if (rows.length === 0) {
+            strategyLabBody.innerHTML = `<tr><td colspan="14" style="text-align:center; padding:28px; color:var(--text-muted);">No strategies match the current filters.</td></tr>`;
+            return;
+        }
+
+        strategyLabBody.innerHTML = rows.map(r => {
+            const active = r.active || {};
+            const perf = r.performance || {};
+            const p1 = perf['1h'] || null;
+            const p4 = perf['4h'] || null;
+
+            const tier = active.tier || 'C';
+            const tierClass = tier === 'A+' ? 'tier-a-plus' : tier === 'A' ? 'tier-a' : tier === 'B+' ? 'tier-b-plus' : tier === 'C' ? 'tier-c' : 'tier-b';
+            const typeSlug = String(r.type || '').toLowerCase().replace(/_/g, '-');
+            const activePf = Number(active.pf || 0);
+            const avgTrade = Number(active.avg_trade_pct || 0);
+            const activeTf = String(active.timeframe || '').toUpperCase();
+            const proxy = active.is_proxy ? '<span class="lab-proxy" title="Timeframe proxied from the closest tested interval">proxy</span>' : '';
+            const pf1 = p1 ? Number(p1.pf).toFixed(2) : '—';
+            const pf4 = p4 ? Number(p4.pf).toFixed(2) : '—';
+            const pf1Class = p1 && Number(p1.pf) >= 1 ? 'positive' : 'negative';
+            const pf4Class = p4 && Number(p4.pf) >= 1 ? 'positive' : 'negative';
+            const activePfClass = activePf >= 1 ? 'positive' : 'negative';
+            const avgClass = avgTrade >= 0 ? 'positive' : 'negative';
+            const sample = active.sample_quality || 'LOW';
+
+            return `
+                <tr class="strategy-lab-row">
+                    <td>
+                        <div class="strategy-name-cell">
+                            <strong>${r.name}</strong>
+                            <span class="strategy-desc">${r.description || ''}</span>
+                        </div>
+                    </td>
+                    <td><span class="direction-badge ${r.direction === 'LONG' ? 'long' : 'short'}">${r.direction}</span></td>
+                    <td><span class="strategy-type-badge type-${typeSlug}">${String(r.type || '').replace(/_/g, ' ')}</span></td>
+                    <td><span class="lab-tf-badge">${String(r.best_timeframe || '').toUpperCase()}</span></td>
+                    <td class="${pf1Class}">${pf1}</td>
+                    <td class="${pf4Class}">${pf4}</td>
+                    <td>
+                        <strong class="${activePfClass}">${activePf.toFixed(2)}</strong>${proxy}
+                        <div class="lab-sub">${activeTf} · ${sample}</div>
+                    </td>
+                    <td>${Number(active.wr || 0).toFixed(1)}%</td>
+                    <td>${active.trades || 0}</td>
+                    <td class="${avgClass}">${avgTrade >= 0 ? '+' : ''}${avgTrade.toFixed(3)}%</td>
+                    <td class="negative">${Number(active.max_dd_pct || 0).toFixed(1)}%</td>
+                    <td>${Number(active.sharpe || 0).toFixed(2)}</td>
+                    <td><span class="tier-badge ${tierClass}">${tier}</span></td>
+                    <td><span class="mtf-policy-badge ${r.mtf_policy === 'required' ? 'required' : 'soft'}">${r.mtf_policy === 'required' ? 'Required' : 'Soft'}</span></td>
+                </tr>
+            `;
+        }).join('');
+    }
 
     // ================================================
     // 5m High Delta Futures Terminal Logic
@@ -1801,6 +2177,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const botCfgMaxExposure = document.getElementById('bot-cfg-max-exposure');
     const botCfgCooldown = document.getElementById('bot-cfg-cooldown');
     const botCfgConfidence = document.getElementById('bot-cfg-confidence');
+    const botCfgMinQuality = document.getElementById('bot-cfg-min-quality');
+    const botCfgBestPerSymbol = document.getElementById('bot-cfg-best-per-symbol');
 
     const botCfgAsset = document.getElementById('bot-cfg-asset');
     const botCfgStrategy = document.getElementById('bot-cfg-strategy');
@@ -2069,6 +2447,8 @@ document.addEventListener("DOMContentLoaded", () => {
             strategy_filter: botCfgStrategy ? botCfgStrategy.value : 'ALL',
             leverage: parseInt(botCfgLeverage ? botCfgLeverage.value : 5) || 5,
             min_confidence: parseInt(botCfgConfidence ? botCfgConfidence.value : 60) || 60,
+            min_quality: parseInt(botCfgMinQuality ? botCfgMinQuality.value : 55) || 0,
+            best_per_symbol: botCfgBestPerSymbol ? botCfgBestPerSymbol.checked : true,
             max_positions: parseInt(botCfgMaxPos ? botCfgMaxPos.value : 3) || 3,
             max_daily_loss: parseFloat(botCfgMaxLoss ? botCfgMaxLoss.value : 50) || 50,
             max_total_exposure: parseFloat(botCfgMaxExposure ? botCfgMaxExposure.value : 500) || 500,
@@ -2175,6 +2555,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (botCfgInterval) botCfgInterval.value = config.scan_interval_minutes || 60;
         if (botCfgCooldown) botCfgCooldown.value = config.cooldown_hours || 4;
         if (botCfgConfidence) botCfgConfidence.value = config.min_confidence || 60;
+        if (botCfgMinQuality) botCfgMinQuality.value = config.min_quality != null ? config.min_quality : 55;
+        if (botCfgBestPerSymbol) botCfgBestPerSymbol.checked = config.best_per_symbol !== false;
         if (botCfgPaper) botCfgPaper.checked = config.paper_mode !== false;
         if (botCfgMarket) botCfgMarket.value = config.market_type || 'futures';
         if (botCfgAsset) botCfgAsset.value = config.asset_filter || 'all';
